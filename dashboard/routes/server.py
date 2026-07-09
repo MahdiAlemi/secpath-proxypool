@@ -46,16 +46,17 @@ def api_server_log_stream():
 def api_server_status():
     try:
         config = load_servers_config()
-        print(f"[DEBUG] API /api/server called, config: {config}")
         servers = {}
         for port_key, conf in config.items():
             port = str(port_key)
             try:
                 status = get_server_status(port)
                 servers[port] = status
+                if not status.get("running") and conf.get("pid"):
+                    conf["pid"] = None
+                    save_servers_config(config)
                 servers[port]["protocol"] = conf.get("protocol", "http")
                 servers[port]["config"] = conf.get("config", {})
-                print(f"[DEBUG] Port {port}: running={status.get('running')}, pid={status.get('pid')}")
             except Exception as e:
                 servers[port] = {"running": False, "error": str(e)}
         
@@ -154,18 +155,13 @@ def api_server_start():
     data = request.json or {}
     port = str(data.get("port", 8080))
     
-    print(f"[DEBUG] Starting server on port: {port}")
-    
     config = load_servers_config()
-    print(f"[DEBUG] Current config before start: {config}")
     
     existing_config = config.get(port, {}).get("config", {})
     
     if existing_config and not data.get("config"):
         data = existing_config
         data["port"] = int(port)
-    
-    print(f"[DEBUG] Data being used to start: {data}")
     
     if port in config and config[port].get("pid"):
         pid = config[port]["pid"]

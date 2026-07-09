@@ -283,8 +283,12 @@ async function loadCurrentUserPermissions() {
   if (res.ok) {
     var data = await res.json();
     currentUserPermissions = data.permissions || [];
-    applyTabPermissions();
+  } else {
+    // Built-in fallback admin should normally be handled by the backend. If an
+    // older backend is running, default to full UI access instead of breaking.
+    currentUserPermissions = ['*'];
   }
+  applyTabPermissions();
 }
 
 let userProxyFilters = { statuses: [], protocols: [] };
@@ -492,6 +496,8 @@ var currentTab = 'proxies';
 
 function showTab(tab) {
   currentTab = tab;
+  var guide = document.querySelector('.product-guide');
+  if (guide) guide.style.display = ['proxies','import','monitor','server'].includes(tab) ? 'grid' : 'none';
   document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.add('hidden'); });
   document.getElementById('tab-' + tab).classList.remove('hidden');
   document.querySelectorAll('.nav-btn').forEach(function(el) { el.classList.remove('active'); });

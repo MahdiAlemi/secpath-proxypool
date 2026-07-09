@@ -163,3 +163,22 @@ tr:hover{background:var(--panel-light)}
 .server-card-label{color:var(--muted);font-size:12px}
 .server-card-value{font-weight:500;text-align:right;max-width:60%;overflow:hidden;text-overflow:ellipsis}
 .server-card-footer{display:flex;gap:8px;padding:12px 16px;background:var(--panel);border-top:1px solid var(--border)}
+
+
+/* Phase 7 product polish */
+body{background:linear-gradient(180deg,var(--bg),var(--panel-light));}
+.header{position:sticky;top:0;z-index:50;box-shadow:0 8px 24px rgba(15,23,42,.06)}
+.logo{box-shadow:0 10px 22px rgba(59,130,246,.35)}
+.title::after{content:'Commercial Proxy Pool';display:block;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.02em;margin-top:2px}
+.nav{position:sticky;top:73px;z-index:45;box-shadow:0 10px 20px rgba(15,23,42,.04)}
+.nav-btn{border:1px solid transparent}.nav-btn.active{box-shadow:0 8px 18px rgba(59,130,246,.24)}
+.card,.stat-card,.monitor-card,.server-card{box-shadow:0 10px 30px rgba(15,23,42,.05)}
+.stat-card{transition:transform .15s,box-shadow .15s}.stat-card:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(15,23,42,.08)}
+.btn{box-shadow:0 2px 8px rgba(15,23,42,.08)}.btn:hover{transform:translateY(-1px)}
+.form-input{transition:border-color .15s,box-shadow .15s}.form-input:focus{box-shadow:0 0 0 3px rgba(59,130,246,.12)}
+.product-guide{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:16px}
+.product-guide-card{background:linear-gradient(135deg,var(--panel),var(--panel-light));border:1px solid var(--border);border-radius:12px;padding:14px}
+.product-guide-card strong{display:block;margin-bottom:4px}.product-guide-card span{font-size:12px;color:var(--muted)}
+.health-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:var(--panel-light);font-size:12px;color:var(--muted);margin-left:8px;font-weight:500}
+.server-card-value,.monitor-card-value{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+[data-theme="dark"] .card,[data-theme="dark"] .stat-card,[data-theme="dark"] .monitor-card,[data-theme="dark"] .server-card{box-shadow:0 14px 40px rgba(0,0,0,.22)}

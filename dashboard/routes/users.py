@@ -8,11 +8,26 @@ users_bp = Blueprint('users', __name__)
 
 
 def get_user_from_session():
-    """Get current user from Flask session"""
+    """Get current user from Flask session.
+
+    The built-in fallback admin uses user_id=0 and is not stored in the DB.
+    Treat it as a real admin for `/api/users/me` so the frontend does not get
+    a noisy 404 on every page load.
+    """
     user_id = session.get('user_id')
-    if not user_id:
+    if user_id is None:
         return None
-    
+
+    if user_id == 0:
+        return {
+            'id': 0,
+            'username': session.get('user', 'admin'),
+            'role': 'admin',
+            'custom_permissions': {},
+            'is_active': True,
+            'last_login': None
+        }
+
     with db.session() as db_session:
         user = db_session.query(User).filter_by(id=user_id, is_active=True).first()
         if user:

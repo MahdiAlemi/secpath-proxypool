@@ -10,7 +10,7 @@ userProxyFilters = {{ proxy_filters | tojson }};
   <div class="header">
     <div class="brand">
       <div class="logo">PX</div>
-      <div class="title">Proxy Dashboard</div>
+      <div class="title">ProxyPool Control Center</div>
     </div>
     <div class="header-controls">
       <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">&#9790;</button>
@@ -21,7 +21,7 @@ userProxyFilters = {{ proxy_filters | tojson }};
   </div>
 
   <div class="nav">
-    <button class="nav-btn {{ 'active' if tab=='proxies' else '' }}" onclick="showTab('proxies')">Proxies</button>
+    <button class="nav-btn {{ 'active' if tab=='proxies' else '' }}" onclick="showTab('proxies')">Proxy Inventory</button>
     <button class="nav-btn {{ 'active' if tab=='import' else '' }}" onclick="showTab('import')">Import</button>
     <button class="nav-btn {{ 'active' if tab=='monitor' else '' }}" onclick="showTab('monitor')">Monitor</button>
     <button class="nav-btn {{ 'active' if tab=='server' else '' }}" onclick="showTab('server')">Server</button>
@@ -29,6 +29,12 @@ userProxyFilters = {{ proxy_filters | tojson }};
   </div>
 
   <div class="main">
+    <div class="product-guide">
+      <div class="product-guide-card"><strong>1. Import</strong><span>Add fresh proxy URLs or paste proxy lists.</span></div>
+      <div class="product-guide-card"><strong>2. Monitor</strong><span>Run health checks; successful untested proxies become alive.</span></div>
+      <div class="product-guide-card"><strong>3. Serve</strong><span>Start an HTTP proxy server using alive candidates.</span></div>
+      <div class="product-guide-card"><strong>4. Verify</strong><span>Test with curl -x http://127.0.0.1:PORT https://ident.me.</span></div>
+    </div>
     <!-- PROXIES TAB -->
     <div id="tab-proxies" class="tab-content {{ 'hidden' if tab!='proxies' else '' }}">
       <div class="card">
@@ -261,7 +267,7 @@ userProxyFilters = {{ proxy_filters | tojson }};
     <div id="tab-server" class="tab-content {{ 'hidden' if tab!='server' else '' }}">
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Proxy Servers</div>
+          <div class="card-title">Proxy Servers <span class="health-pill">Production candidate default: alive</span></div>
           <button class="btn btn-primary btn-sm" onclick="showAddServerForm()">+ Add New Server Profile</button>
         </div>
         <div id="servers-list" class="servers-grid">
