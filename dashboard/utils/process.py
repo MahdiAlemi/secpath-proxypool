@@ -58,7 +58,9 @@ def get_monitor_status(monitor_id):
             try:
                 if psutil.pid_exists(int(pid)):
                     p = psutil.Process(int(pid))
-                    return {"running": True, "pid": pid, "memory_mb": round(p.memory_info().rss / 1024 / 1024, 1)}
+                    if p.status() == psutil.STATUS_ZOMBIE:
+                        return {"running": False, "pid": None, "memory_mb": 0}
+                    return {"running": p.is_running(), "pid": pid, "memory_mb": round(p.memory_info().rss / 1024 / 1024, 1)}
             except:
                 pass
     return {"running": False, "pid": None, "memory_mb": 0}
@@ -73,7 +75,9 @@ def get_server_status(port):
             try:
                 if psutil.pid_exists(int(pid)):
                     p = psutil.Process(int(pid))
-                    return {"running": True, "pid": pid, "memory_mb": round(p.memory_info().rss / 1024 / 1024, 1), "connections": len(p.connections())}
+                    if p.status() == psutil.STATUS_ZOMBIE:
+                        return {"running": False, "pid": None, "memory_mb": 0, "connections": 0}
+                    return {"running": p.is_running(), "pid": pid, "memory_mb": round(p.memory_info().rss / 1024 / 1024, 1), "connections": len(p.net_connections())}
             except:
                 pass
     return {"running": False, "pid": None, "memory_mb": 0, "connections": 0}

@@ -13,8 +13,10 @@ from proxy_server.utils.logging import log
 def main():
     args = parse_args()
     
-    # Only enable TLS for HTTP/HTTPS, not for SOCKS4/SOCKS5
-    if args.protocol in ('http', 'https'):
+    # HTTP proxy listeners must stay plaintext so clients can send normal
+    # HTTP proxy requests and CONNECT tunnels (e.g. curl -x http://host:port https://...).
+    # Only the explicit "https" listener wraps the listening socket in TLS.
+    if args.protocol == 'https':
         if args.certfile is None:
             try:
                 cert, key = generate_self_signed_cert()
@@ -24,7 +26,6 @@ def main():
             except Exception as e:
                 log("[*] No TLS (cert generation failed): {0}", e)
     else:
-        # SOCKS4/SOCKS5 don't use TLS
         args.certfile = None
         args.keyfile = None
         log("[*] TLS disabled for {0} protocol", args.protocol)
