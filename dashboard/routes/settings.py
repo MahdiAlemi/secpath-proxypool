@@ -2,6 +2,7 @@ import os
 import subprocess
 import tempfile
 import shutil
+import glob
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file
 
@@ -17,10 +18,15 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 @login_required
 @require_permission("settings.view")
 def api_settings():
+    db_type = os.getenv('DB_TYPE', 'mysql')
+    sqlite_db_path = os.getenv('SQLITE_DB_PATH', 'proxies.db')
+    sqlite_abs = sqlite_db_path if os.path.isabs(sqlite_db_path) else os.path.join(BASE_DIR, sqlite_db_path)
     return jsonify({
-        "db_type": os.getenv('DB_TYPE', 'mysql'),
+        "db_type": db_type,
         "db_name": os.getenv('DB_NAME', 'proxypool'),
-        "sqlite_db_path": os.getenv('SQLITE_DB_PATH', 'proxies.db'),
+        "sqlite_db_path": sqlite_db_path,
+        "db_path": sqlite_abs,
+        "db_size": (os.path.getsize(sqlite_abs) / 1024 / 1024) if os.path.exists(sqlite_abs) else 0,
         "users": list(USERS.keys())
     })
 
@@ -192,3 +198,83 @@ def api_settings_import():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
+
+
+
+@settings_bp.route("/api/settings/cleanup/logs", methods=["POST"])
+@login_required
+@require_permission("settings.edit")
+def api_settings_cleanup_logs():
+    """Delete runtime log files from the project root."""
+    patterns = ["dashboard.log", "server_*.log", "monitor_*.log", "*.log"]
+    deleted = 0
+    files = set()
+    for pattern in patterns:
+        files.update(glob.glob(os.path.join(BASE_DIR, pattern)))
+    for path in files:
+        if not os.path.isfile(path):
+            continue
+        # Keep cleanup conservative: only files directly under project root.
+        if os.path.dirname(os.path.abspath(path)) != os.path.abspath(BASE_DIR):
+            continue
+        try:
+            os.remove(path)
+            deleted += 1
+        except OSError:
+            pass
+    return jsonify({"success": True, "deleted": deleted})
+
+
+@settings_bp.route("/api/settings/cleanup/runtime", methods=["POST"])
+@login_required
+@require_permission("settings.edit")
+def api_settings_cleanup_runtime():
+    """Clear stale runtime files without deleting the database."""
+    deleted = 0
+    for name in [".monitors.json", ".servers.json", ".monitor.pid", ".server.pid"]:
+        path = os.path.join(BASE_DIR, name)
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+                deleted += 1
+            except OSError:
+                pass
+    progress_dir = os.path.join(BASE_DIR, ".progress")
+    if os.path.isdir(progress_dir):
+        try:
+            shutil.rmtree(progress_dir)
+            deleted += 1
+        except OSError:
+            pass
+    return jsonify({"success": True, "deleted": deleted})
+
+
+@settings_bp.route("/api/settings/cleanup/legacy-statuses", methods=["POST"])
+@login_required
+@require_permission("settings.edit")
+def api_settings_cleanup_legacy_statuses():
+    """Normalize legacy statuses produced before the state-machine fix."""
+    from database import db, Proxy
+    with db.session() as session:
+        # Old bug: untested failures became revived. If a revived proxy has never
+        # succeeded, normalize it to dead.
+        revived_to_dead = session.query(Proxy).filter(
+            Proxy.status == 'revived',
+            (Proxy.alive_hits.is_(None)) | (Proxy.alive_hits == 0)
+        ).update({Proxy.status: 'dead'}, synchronize_session=False)
+
+        # If revived has successes but is not currently confirmed alive, keep it
+        # as soft so a normal monitor run can promote/demote it.
+        revived_to_soft = session.query(Proxy).filter(
+            Proxy.status == 'revived',
+            Proxy.alive_hits > 0
+        ).update({Proxy.status: 'soft'}, synchronize_session=False)
+
+        # Clear obviously stale transition labels after normalization.
+        session.commit()
+    return jsonify({
+        "success": True,
+        "revived_to_dead": revived_to_dead,
+        "revived_to_soft": revived_to_soft,
+        "updated": revived_to_dead + revived_to_soft
+    })

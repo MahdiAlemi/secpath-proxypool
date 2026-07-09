@@ -382,6 +382,15 @@ userProxyFilters = {{ proxy_filters | tojson }};
         <button class="btn btn-sm" onclick="openImportModal()">Import</button>
       </div>
     </div>
+    <div class="form-group" style="border-top:1px solid var(--panel-light);padding-top:16px;margin-top:16px">
+      <label class="form-label">Runtime Cleanup</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="cleanupLogs()">Clear Logs</button>
+        <button class="btn btn-sm" onclick="cleanupRuntimeFiles()">Clear Runtime Files</button>
+        <button class="btn btn-sm" onclick="cleanupLegacyStatuses()">Normalize Legacy Statuses</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px">Cleanup actions do not delete the database. Normalize fixes old pre-Phase-5 revived records.</div>
+    </div>
     <div id="import-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000">
       <div style="background:var(--panel);padding:24px;border-radius:12px;max-width:400px;margin:100px auto">
         <h3>Import Database</h3>
@@ -393,8 +402,8 @@ userProxyFilters = {{ proxy_filters | tojson }};
           </select>
         </div>
         <div style="margin:16px 0">
-          <label class="form-label">SQL File</label>
-          <input type="file" id="import-file" accept=".sql" class="form-input">
+          <label class="form-label">Backup File (.sql for MySQL, .sqlite for SQLite)</label>
+          <input type="file" id="import-file" accept=".sql,.sqlite" class="form-input">
         </div>
         <div style="display:flex;gap:12px;justify-content:flex-end">
           <button class="btn" onclick="document.getElementById('import-modal').style.display='none'">Cancel</button>
@@ -810,6 +819,11 @@ userProxyFilters = {{ proxy_filters | tojson }};
             <option value="false">No</option>
             <option value="true">Yes</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Candidate Statuses</label>
+          <input type="text" id="server-candidate-statuses" class="form-input" value="alive" placeholder="alive or alive,soft">
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Production default: alive. Dev/testing: alive,soft.</div>
         </div>
       </div>
     </div>

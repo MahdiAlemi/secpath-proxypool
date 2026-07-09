@@ -1916,6 +1916,7 @@ async function checkServerStatus() {
           '<div class="server-card-row"><span class="server-card-label">Rotate Interval</span><span class="server-card-value">' + (cfg.rotate_interval || 60) + 's</span></div>' +
           '<div class="server-card-row"><span class="server-card-label">Min Cost</span><span class="server-card-value">$' + (cfg.min_cost || 0) + '</span></div>' +
           '<div class="server-card-row"><span class="server-card-label">Cost Threshold</span><span class="server-card-value">$' + (cfg.cost_threshold || 0.3) + '</span></div>' +
+          '<div class="server-card-row"><span class="server-card-label">Candidates</span><span class="server-card-value">' + (cfg.candidate_statuses || 'alive') + '</span></div>' +
         '</div>' +
         '<div class="server-card-footer">' +
           (s.running ? '<button class="btn btn-sm btn-danger" onclick="stopServer(\'' + port + '\')">Stop</button>' : '<button class="btn btn-sm btn-primary" onclick="startServer(\'' + port + '\')">Start</button>') +
@@ -1958,6 +1959,7 @@ async function startServerFromModal() {
     sticky_upstream: getVal('server-sticky-upstream') || null,
     insecure_upstream: getVal('server-insecure-upstream') === 'true',
     upstream_protocol: getVal('server-upstream-proto') || null,
+    candidate_statuses: getVal('server-candidate-statuses', 'alive') || 'alive',
     countryCodes: getVal('server-country') || null,
     regions: getVal('server-regions') || null,
     cities: getVal('server-cities') || null,
@@ -2038,6 +2040,7 @@ async function showServerSettings(port) {
   document.getElementById('server-keyfile').value = cfg.keyfile || '';
   document.getElementById('server-sticky-upstream').value = cfg.sticky_upstream || '';
   document.getElementById('server-upstream-proto').value = cfg.upstream_protocol || '';
+  document.getElementById('server-candidate-statuses').value = cfg.candidate_statuses || 'alive';
   document.getElementById('server-insecure-upstream').value = cfg.insecure_upstream ? 'true' : 'false';
   document.getElementById('server-country').value = cfg.countryCodes || '';
   document.getElementById('server-regions').value = cfg.regions || '';
@@ -2079,6 +2082,7 @@ function showAddServerForm() {
   document.getElementById('server-keyfile').value = '';
   document.getElementById('server-sticky-upstream').value = '';
   document.getElementById('server-upstream-proto').value = '';
+  document.getElementById('server-candidate-statuses').value = 'alive';
   document.getElementById('server-insecure-upstream').value = 'false';
   document.getElementById('server-country').value = '';
   document.getElementById('server-regions').value = '';
@@ -2134,6 +2138,7 @@ async function updateServerProfile() {
     sticky_upstream: getVal('server-sticky-upstream') || null,
     insecure_upstream: getVal('server-insecure-upstream') === 'true',
     upstream_protocol: getVal('server-upstream-proto') || null,
+    candidate_statuses: getVal('server-candidate-statuses', 'alive') || 'alive',
     countryCodes: getVal('server-country') || null,
     regions: getVal('server-regions') || null,
     cities: getVal('server-cities') || null,
@@ -2208,6 +2213,7 @@ async function startServer(port) {
       sticky_upstream: getVal('server-sticky-upstream') || null,
       insecure_upstream: getVal('server-insecure-upstream') === 'true',
       upstream_protocol: getVal('server-upstream-proto') || null,
+    candidate_statuses: getVal('server-candidate-statuses', 'alive') || 'alive',
       countryCodes: getVal('server-country') || null,
       regions: getVal('server-regions') || null,
       cities: getVal('server-cities') || null,
@@ -2300,6 +2306,7 @@ async function createServerProfile() {
     sticky_upstream: getVal('server-sticky-upstream') || null,
     insecure_upstream: getVal('server-insecure-upstream') === 'true',
     upstream_protocol: getVal('server-upstream-proto') || null,
+    candidate_statuses: getVal('server-candidate-statuses', 'alive') || 'alive',
     countryCodes: getVal('server-country') || null,
     regions: getVal('server-regions') || null,
     cities: getVal('server-cities') || null,
@@ -2533,7 +2540,7 @@ async function loadSettings() {
   if (data.db_type === 'mysql') {
     document.getElementById('db-info').textContent = 'MySQL: ' + data.db_name;
   } else {
-    document.getElementById('db-info').textContent = data.db_path + ' - ' + data.db_size.toFixed(2) + ' MB';
+    document.getElementById('db-info').textContent = (data.db_path || data.sqlite_db_path || 'SQLite') + ' - ' + Number(data.db_size || 0).toFixed(2) + ' MB';
   }
 }
 
@@ -2688,6 +2695,39 @@ async function bulkDeleteProxies() {
       showAlert('Error: ' + (data.error || 'Unknown error'));
     }
   });
+}
+
+async function cleanupLogs() {
+  showConfirm('Clear Logs', 'Delete dashboard/server/monitor log files? This does not delete the database.', async function() {
+    var res = await authFetch('/api/settings/cleanup/logs', {method: 'POST'});
+    var data = await res.json();
+    if (data.success) showAlert('Deleted ' + data.deleted + ' log files');
+    else showAlert('Cleanup failed: ' + (data.error || 'Unknown error'));
+  }, {confirmText: 'Clear Logs', confirmClass: 'btn-danger'});
+}
+
+async function cleanupRuntimeFiles() {
+  showConfirm('Clear Runtime Files', 'Delete stale monitor/server config and progress files? Running processes should be stopped first.', async function() {
+    var res = await authFetch('/api/settings/cleanup/runtime', {method: 'POST'});
+    var data = await res.json();
+    if (data.success) {
+      showAlert('Deleted ' + data.deleted + ' runtime items');
+      checkMonitorStatus();
+      checkServerStatus();
+    } else showAlert('Cleanup failed: ' + (data.error || 'Unknown error'));
+  }, {confirmText: 'Clear Runtime', confirmClass: 'btn-danger'});
+}
+
+async function cleanupLegacyStatuses() {
+  showConfirm('Normalize Legacy Statuses', 'Convert old pre-Phase-5 revived records into dead/soft. This keeps proxies but changes statuses.', async function() {
+    var res = await authFetch('/api/settings/cleanup/legacy-statuses', {method: 'POST'});
+    var data = await res.json();
+    if (data.success) {
+      showAlert('Updated ' + data.updated + ' proxies (revived→dead: ' + data.revived_to_dead + ', revived→soft: ' + data.revived_to_soft + ')');
+      loadProxies();
+      loadStats();
+    } else showAlert('Cleanup failed: ' + (data.error || 'Unknown error'));
+  }, {confirmText: 'Normalize', confirmClass: 'btn-primary'});
 }
 
 async function updateProxyFilterInfo() {
