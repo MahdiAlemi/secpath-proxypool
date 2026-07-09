@@ -3,7 +3,7 @@ import shutil
 from datetime import datetime
 from flask import Blueprint, request, jsonify
 
-from dashboard.decorators import login_required
+from dashboard.decorators import login_required, require_permission
 from dashboard.config import DB_PATH, PROTOCOLS, USERS
 
 stats_bp = Blueprint('stats', __name__)
@@ -19,6 +19,7 @@ def get_db():
 
 @stats_bp.route("/api/stats", methods=["GET"])
 @login_required
+@require_permission("stats.view")
 def api_stats():
     from sqlalchemy import func, or_
     from database import Proxy

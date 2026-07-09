@@ -1,6 +1,7 @@
 import os
 import subprocess
 import tempfile
+import sys
 
 from flask import Blueprint, request, jsonify
 
@@ -39,7 +40,7 @@ def api_import():
             temp_file = f.name
         try:
             proc = subprocess.run(
-                ["python3", importer_path, "--mode", "links", "--file", temp_file],
+                [sys.executable, importer_path, "--mode", "links", "--file", temp_file],
                 capture_output=True, text=True, timeout=120
             )
             output = proc.stdout + proc.stderr
@@ -70,7 +71,7 @@ def api_import():
             temp_file = f.name
         try:
             proc = subprocess.run(
-                ["python3", importer_path, "--mode", "links", "--file", temp_file],
+                [sys.executable, importer_path, "--mode", "links", "--file", temp_file],
                 capture_output=True, text=True, timeout=60
             )
             output = proc.stdout
@@ -124,16 +125,21 @@ def api_import():
 def api_import_count_url():
     """Count proxies in a URL without importing"""
     import requests
+    from urllib.parse import urlparse
     
     url = request.json.get("url", "")
     proto = request.json.get("protocol", "http")
     
     if not url:
         return jsonify({"success": False, "error": "URL required", "count": 0})
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return jsonify({"success": False, "error": "Only http/https URLs are allowed", "count": 0})
     
     try:
         response = requests.get(url, timeout=30)
-        content = response.text
+        response.raise_for_status()
+        content = response.text[:2_000_000]
         
         lines = content.strip().split("\n")
         count = 0
