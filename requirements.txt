@@ -13,3 +13,13 @@ requests>=2.31.0
 
 # For server threading (if needed)
 gevent>=23.0.0
+
+# Security & Auth
+bcrypt>=4.0.0
+PyJWT>=2.8.0
+cryptography>=41.0.0
+
+# Utilities & Network
+psutil>=5.9.0
+PySocks>=1.7.1
+tqdm>=4.66.0
