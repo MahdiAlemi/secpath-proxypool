@@ -1,0 +1,15 @@
+# Web Framework
+Flask>=2.3.0
+
+# Database
+SQLAlchemy>=2.0.0
+PyMySQL>=1.1.0
+
+# Configuration
+python-dotenv>=1.0.0
+
+# HTTP Requests
+requests>=2.31.0
+
+# For server threading (if needed)
+gevent>=23.0.0

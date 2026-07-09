@@ -1,0 +1,1015 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script>
+{% if proxy_filters %}
+userProxyFilters = {{ proxy_filters | tojson }};
+{% endif %}
+</script>
+<div class="app">
+  <div class="header">
+    <div class="brand">
+      <div class="logo">PX</div>
+      <div class="title">Proxy Dashboard</div>
+    </div>
+    <div class="header-controls">
+      <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">&#9790;</button>
+      <button class="theme-toggle" onclick="openModal('modal-users')" title="Users"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></button>
+      <button class="theme-toggle" onclick="openModal('modal-settings')" title="Settings">&#9881;</button>
+      <button class="logout" onclick="location.href='{{ url_for('logout') }}'">Logout</button>
+    </div>
+  </div>
+
+  <div class="nav">
+    <button class="nav-btn {{ 'active' if tab=='proxies' else '' }}" onclick="showTab('proxies')">Proxies</button>
+    <button class="nav-btn {{ 'active' if tab=='import' else '' }}" onclick="showTab('import')">Import</button>
+    <button class="nav-btn {{ 'active' if tab=='monitor' else '' }}" onclick="showTab('monitor')">Monitor</button>
+    <button class="nav-btn {{ 'active' if tab=='server' else '' }}" onclick="showTab('server')">Server</button>
+    <button class="nav-btn {{ 'active' if tab=='stats' else '' }}" onclick="showTab('stats')">Stats</button>
+  </div>
+
+  <div class="main">
+    <!-- PROXIES TAB -->
+    <div id="tab-proxies" class="tab-content {{ 'hidden' if tab!='proxies' else '' }}">
+      <div class="card">
+        <div class="card-header">
+          <div style="display:flex;align-items:center;gap:10px;flex:1">
+            <div style="display:flex;gap:4px;align-items:center">
+              <span style="font-size:12px;color:var(--muted)">Proto:</span>
+              <select onchange="changeProtoFilter()" style="padding:4px 6px;border-radius:4px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:12px">
+                <option value="all">All</option>
+                <option value="http">HTTP</option>
+                <option value="https">HTTPS</option>
+                <option value="socks4">SOCKS4</option>
+                <option value="socks5">SOCKS5</option>
+              </select>
+            </div>
+            <div id="status-filters" style="display:flex;gap:4px;align-items:center">
+              <span style="font-size:12px;color:var(--muted)">Status:</span>
+              <div class="stat-card hidden-by-filter" data-status="alive" onclick="toggleStatusFilter('alive')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Alive">
+                <div id="filter-count-alive" style="font-weight:bold;font-size:12px;color:var(--success)">0</div>
+              </div>
+              <div class="stat-card hidden-by-filter" data-status="flaky" onclick="toggleStatusFilter('flaky')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Flaky">
+                <div id="filter-count-flaky" style="font-weight:bold;font-size:12px;color:#f59e0b">0</div>
+              </div>
+              <div class="stat-card hidden-by-filter" data-status="cooling" onclick="toggleStatusFilter('cooling')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Cooling">
+                <div id="filter-count-cooling" style="font-weight:bold;font-size:12px;color:#8b5cf6">0</div>
+              </div>
+              <div class="stat-card hidden-by-filter" data-status="soft" onclick="toggleStatusFilter('soft')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Soft">
+                <div id="filter-count-soft" style="font-weight:bold;font-size:12px;color:#FF9800">0</div>
+              </div>
+              <div class="stat-card hidden-by-filter" data-status="revived" onclick="toggleStatusFilter('revived')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Revived">
+                <div id="filter-count-revived" style="font-weight:bold;font-size:12px;color:#757575">0</div>
+              </div>
+              <div class="stat-card hidden-by-filter" data-status="semi-revived" onclick="toggleStatusFilter('semi-revived')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Semi-Revived">
+                <div id="filter-count-semi-revived" style="font-weight:bold;font-size:12px;color:#424242">0</div>
+              </div>
+              <div class="stat-card hidden-by-filter" data-status="dead" onclick="toggleStatusFilter('dead')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Dead">
+                <div id="filter-count-dead" style="font-weight:bold;font-size:12px;color:var(--danger)">0</div>
+              </div>
+              <div class="stat-card hidden-by-filter" data-status="untested" onclick="toggleStatusFilter('untested')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Untested">
+                <div id="filter-count-untested" style="font-weight:bold;font-size:12px;color:var(--muted)">0</div>
+              </div>
+            </div>
+          </div>
+          <span id="last-scan-info" style="font-size:11px;color:var(--text);background:var(--panel-light);padding:4px 10px;border-radius:12px;white-space:nowrap"></span>
+          <div style="display:flex;gap:4px;align-items:center;flex:1;justify-content:flex-end">
+            <button class="btn btn-sm" onclick="toggleColumnsMenu()">&#9881; Columns</button>
+            <div id="columns-menu" style="display:none;position:absolute;right:10px;top:50px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px;z-index:100;min-width:180px;max-height:400px;overflow-y:auto">
+              <div style="font-weight:bold;margin-bottom:8px">Show/Hide Columns</div>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('protocol', this.checked)"> Protocol</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('port', this.checked)"> Port</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('status', this.checked)"> Status</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('prev_state', this.checked)"> Previous State</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('delta', this.checked)"> Last Transition</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('cost', this.checked)"> Cost</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" onchange="toggleColumn('latency', this.checked)"> Latency Score</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" onchange="toggleColumn('reliability', this.checked)"> Reliability</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" onchange="toggleColumn('jitter', this.checked)"> Jitter Score</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" onchange="toggleColumn('recency', this.checked)"> Recency Score</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('prev_cost', this.checked)"> Previous Cost</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('speed', this.checked)"> Speed</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('alive', this.checked)"> Alive Hits</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('fails', this.checked)"> Fail Hits</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('total_checks', this.checked)"> Total Checks</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('consecutive_fails', this.checked)"> Consecutive Fails</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('country', this.checked)"> Country</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('region', this.checked)"> Region</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('city', this.checked)"> City</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('district', this.checked)"> District</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('zip', this.checked)"> ZIP</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('isp', this.checked)"> ISP</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('asn', this.checked)"> ASN</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('org', this.checked)"> Organization</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('location', this.checked)"> Location (Lat/Lon)</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('timezone', this.checked)"> Timezone</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('mobile', this.checked)"> Mobile</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('hosting', this.checked)"> Hosting</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('lastalive', this.checked)"> Last Alive</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('lastcheck', this.checked)"> Last Checked</label>
+            </div>
+            <div style="display:flex;align-items:center;background:var(--panel-light);border-radius:6px;padding:2px">
+              <input type="number" id="auto-refresh-sec" value="30" min="5" max="300" style="width:45px;padding:4px 2px;border:none;background:transparent;color:var(--text);font-size:11px;text-align:center" onchange="setAutoRefreshInterval(parseInt(this.value))">
+              <button id="auto-refresh-btn" class="btn btn-sm" style="padding:4px 6px;border:none;background:transparent;border-left:1px solid var(--border);color:var(--text);font-size:14px" onclick="toggleAutoRefresh()" title="Auto-refresh">&#8635;</button>
+            </div>
+            <button class="btn btn-sm" id="btn-adv-search" style="background:var(--accent);color:#fff" onclick="openAdvSearch()">Search</button>
+            <button class="btn btn-sm" id="btn-export-csv" onclick="exportProxies('csv')">Export CSV</button>
+            <button class="btn btn-sm" id="btn-export-json" onclick="exportProxies('json')">Export JSON</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table id="proxies-table">
+            <thead>
+              <tr>
+                <th class="sortable" style="position:sticky;left:0;z-index:2" onclick="sortTable('ip')">IP</th>
+                <th class="sortable col-toggle" data-col="protocol" onclick="sortTable('protocol')">Protocol</th>
+                <th class="sortable col-toggle" data-col="port" onclick="sortTable('port')">Port</th>
+                <th class="col-toggle" data-col="status">Status</th>
+                <th class="col-toggle" data-col="prev_state">Prev</th>
+                <th class="col-toggle" data-col="delta">Delta</th>
+                <th class="sortable col-toggle" data-col="cost" onclick="sortTable('cost')">Cost</th>
+                <th class="sortable col-toggle" data-col="latency" onclick="sortTable('latency')">Latency</th>
+                <th class="sortable col-toggle" data-col="reliability" onclick="sortTable('reliability')">Reliability</th>
+                <th class="sortable col-toggle" data-col="jitter" onclick="sortTable('jitter')">Jitter</th>
+                <th class="sortable col-toggle" data-col="recency" onclick="sortTable('recency')">Recency</th>
+                <th class="sortable col-toggle" data-col="prev_cost" onclick="sortTable('previous_cost')">Prev Cost</th>
+                <th class="sortable col-toggle" data-col="speed" onclick="sortTable('speed_ms')">Speed</th>
+                <th class="sortable col-toggle" data-col="alive" onclick="sortTable('alive_hits')">Alive</th>
+                <th class="sortable col-toggle" data-col="fails" onclick="sortTable('fail_hits')">Fails</th>
+                <th class="sortable col-toggle" data-col="total_checks" onclick="sortTable('total_checks')">Total</th>
+                <th class="sortable col-toggle" data-col="consecutive_fails" onclick="sortTable('consecutive_fails')">Consec</th>
+                <th class="sortable col-toggle" data-col="country" onclick="sortTable('countryCode')">Country</th>
+                <th class="sortable col-toggle" data-col="region" onclick="sortTable('regionName')">Region</th>
+                <th class="sortable col-toggle" data-col="city" onclick="sortTable('city')">City</th>
+                <th class="sortable col-toggle" data-col="district" onclick="sortTable('district')">District</th>
+                <th class="sortable col-toggle" data-col="zip" onclick="sortTable('zip')">ZIP</th>
+                <th class="sortable col-toggle" data-col="isp" onclick="sortTable('isp')">ISP</th>
+                <th class="sortable col-toggle" data-col="asn" onclick="sortTable('asn')">ASN</th>
+                <th class="sortable col-toggle" data-col="org" onclick="sortTable('org')">Org</th>
+                <th class="col-toggle" data-col="location">Location</th>
+                <th class="col-toggle" data-col="timezone">Timezone</th>
+                <th class="col-toggle" data-col="mobile">Mobile</th>
+                <th class="col-toggle" data-col="hosting">Hosting</th>
+                <th class="sortable col-toggle" data-col="lastalive" onclick="sortTable('last_alive')">Last Alive</th>
+                <th class="sortable col-toggle" data-col="lastcheck" onclick="sortTable('last_checked')">Last Check</th>
+                <th id="actions-header" style="position:sticky;right:0;z-index:2">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="proxies-tbody"></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:12px;color:var(--muted)">Per page:</span>
+            <select id="page-size" class="form-input" style="width:auto;padding:4px" onchange="changePageSize(this.value)">
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+            </select>
+          </div>
+          <div class="pager-info" id="pager-info"></div>
+          <div class="pager-btns" id="pager-btns"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- IMPORT TAB -->
+    <div id="tab-import" class="tab-content {{ 'hidden' if tab!='import' else '' }}">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Import Proxies</div></div>
+        <div class="tabs">
+          <button class="tab-btn active" onclick="showImportTab('url')">From URL</button>
+          <button class="tab-btn" onclick="showImportTab('links')">From Links Config</button>
+          <button class="tab-btn" onclick="showImportTab('manual')">Manual Entry</button>
+        </div>
+
+        <div id="import-url" class="import-panel">
+          <div class="form-group">
+            <label class="form-label">Protocol</label>
+            <select id="import-url-proto" class="form-input" style="width:auto">
+              <option value="http">HTTP</option>
+              <option value="https">HTTPS</option>
+              <option value="socks4">SOCKS4</option>
+              <option value="socks5">SOCKS5</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Proxy List URL</label>
+            <input type="text" id="import-url-input" class="form-input" placeholder="https://raw.githubusercontent.com/..." oninput="clearImportCount('url')">
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+            <button class="btn btn-sm" onclick="countImportUrl()">Count</button>
+            <span id="import-url-count" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+          <button class="btn btn-primary" id="import-url-btn" onclick="doImportUrl()">Import</button>
+        </div>
+
+        <div id="import-links" class="import-panel hidden">
+          <div class="form-group">
+            <label class="form-label">Upload File (.ini)</label>
+            <input type="file" id="import-links-file" class="form-input" accept=".ini,.txt" onchange="handleLinksFileUpload()">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Or paste below:</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Links Config (INI format)</label>
+            <textarea id="import-links-content" class="form-input" placeholder="[http]&#10;https://...&#10;[socks5]&#10;https://..." oninput="clearImportCount('links')"></textarea>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+            <button class="btn btn-sm" onclick="countImportLinks()">Count</button>
+            <span id="import-links-count" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+          <button class="btn btn-primary" id="import-links-btn" onclick="doImportLinks()">Import</button>
+        </div>
+
+        <div id="import-manual" class="import-panel hidden">
+          <div class="form-group">
+            <label class="form-label">Upload File (txt/json)</label>
+            <input type="file" id="import-manual-file" class="form-input" accept=".txt,.json" onchange="handleManualFileUpload()">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Or enter below:</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Proxies (one per line, format: protocol ip:port [user] [pass])</label>
+            <textarea id="import-manual-content" class="form-input" placeholder="http 192.168.1.1:8080&#10;socks5 10.0.0.1:1080 user pass" oninput="clearImportCount('manual')"></textarea>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+            <button class="btn btn-sm" onclick="countImportManual()">Count</button>
+            <span id="import-manual-count" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+          <button class="btn btn-primary" id="import-manual-btn" onclick="doImportManual()">Import</button>
+        </div>
+
+        <div id="import-result" class="form-group" style="margin-top:16px"></div>
+      </div>
+    </div>
+
+    <!-- MONITOR TAB -->
+    <div id="tab-monitor" class="tab-content {{ 'hidden' if tab!='monitor' else '' }}">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <div class="card-title">Proxy Monitors</div>
+          <button class="btn btn-primary btn-sm" onclick="showAddMonitorForm()">+ Add New Monitor Profile</button>
+        </div>
+        <div id="monitors-grid" class="monitors-grid">
+          <div class="monitors-empty">No monitor profiles. Click "+ Add New Monitor Profile" to create one.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SERVER TAB -->
+    <div id="tab-server" class="tab-content {{ 'hidden' if tab!='server' else '' }}">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Proxy Servers</div>
+          <button class="btn btn-primary btn-sm" onclick="showAddServerForm()">+ Add New Server Profile</button>
+        </div>
+        <div id="servers-list" class="servers-grid">
+          <div class="servers-empty">No server profiles. Click "+ Add New Server Profile" to create one.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATS TAB -->
+    <div id="tab-stats" class="tab-content {{ 'hidden' if tab!='stats' else '' }}">
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-value" id="stat-total">0</div><div class="stat-label">Total Proxies</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-alive" style="color:var(--success)">0</div><div class="stat-label">Alive</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-flaky" style="color:#f59e0b">0</div><div class="stat-label">Flaky</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-cooling" style="color:#8b5cf6">0</div><div class="stat-label">Cooling</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-soft" style="color:#FF9800">0</div><div class="stat-label">Soft</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-revived" style="color:#757575">0</div><div class="stat-label">Revived</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-semi-revived" style="color:#424242">0</div><div class="stat-label">Semi-Revived</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-dead" style="color:var(--danger)">0</div><div class="stat-label">Dead</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-untested" style="color:var(--muted)">0</div><div class="stat-label">Untested</div></div>
+      </div>
+      
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+        <div class="card">
+          <div class="card-header"><div class="card-title">Status Distribution</div></div>
+          <div id="stats-overview-chart" style="height:200px;display:flex;align-items:flex-end;justify-content:space-around;padding:16px">
+            <div style="text-align:center">
+              <div id="chart-bar-alive" style="width:60px;background:var(--success);height:0;border-radius:4px 4px 0 0"></div>
+              <div style="margin-top:8px;font-size:12px">Alive</div>
+              <div id="chart-label-alive" style="font-weight:bold">0</div>
+            </div>
+            <div style="text-align:center">
+              <div id="chart-bar-flaky" style="width:60px;background:#f59e0b;height:0;border-radius:4px 4px 0 0"></div>
+              <div style="margin-top:8px;font-size:12px">Flaky</div>
+              <div id="chart-label-flaky" style="font-weight:bold">0</div>
+            </div>
+            <div style="text-align:center">
+              <div id="chart-bar-cooling" style="width:60px;background:#8b5cf6;height:0;border-radius:4px 4px 0 0"></div>
+              <div style="margin-top:8px;font-size:12px">Cooling</div>
+              <div id="chart-label-cooling" style="font-weight:bold">0</div>
+            </div>
+            <div style="text-align:center">
+              <div id="chart-bar-soft" style="width:60px;background:#FF9800;height:0;border-radius:4px 4px 0 0"></div>
+              <div style="margin-top:8px;font-size:12px">Soft</div>
+              <div id="chart-label-soft" style="font-weight:bold">0</div>
+            </div>
+            <div style="text-align:center">
+              <div id="chart-bar-revived" style="width:60px;background:#757575;height:0;border-radius:4px 4px 0 0"></div>
+              <div style="margin-top:8px;font-size:12px">Revived</div>
+              <div id="chart-label-revived" style="font-weight:bold">0</div>
+            </div>
+            <div style="text-align:center">
+              <div id="chart-bar-semi-revived" style="width:60px;background:#424242;height:0;border-radius:4px 4px 0 0"></div>
+              <div style="margin-top:8px;font-size:12px">Semi-Revived</div>
+              <div id="chart-label-semi-revived" style="font-weight:bold">0</div>
+            </div>
+            <div style="text-align:center">
+              <div id="chart-bar-dead" style="width:60px;background:var(--danger);height:0;border-radius:4px 4px 0 0"></div>
+              <div style="margin-top:8px;font-size:12px">Dead</div>
+              <div id="chart-label-dead" style="font-weight:bold">0</div>
+            </div>
+            <div style="text-align:center">
+              <div id="chart-bar-untested" style="width:60px;background:var(--muted);height:0;border-radius:4px 4px 0 0"></div>
+              <div style="margin-top:8px;font-size:12px">Untested</div>
+              <div id="chart-label-untested" style="font-weight:bold">0</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card">
+          <div class="card-header"><div class="card-title">Average Speed</div>
+          <div style="font-size:24px;font-weight:bold" id="stat-speed">0ms</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><div class="card-title">Proxies by Protocol</div></div>
+        <div id="stats-protocol-list" style="display:grid;gap:8px"></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><div class="card-title">Protocol Status Breakdown</div></div>
+        <div id="stats-protocol-breakdown" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px"></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><div class="card-title">Top Countries</div></div>
+        <div id="stats-country-list" style="display:grid;gap:8px"></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><div class="card-title">Top ISPs</div></div>
+        <div id="stats-isp-list" style="display:grid;gap:8px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div id="modal-settings" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-title">Settings</div>
+      <button class="modal-close" onclick="closeModal('modal-settings')">&times;</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Dashboard Password</label>
+      <div style="display:flex;gap:12px">
+        <input type="password" id="new-password" class="form-input" placeholder="New password">
+        <button class="btn btn-primary" onclick="changePassword()">Update</button>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Database</label>
+      <div style="display:flex;gap:12px;align-items:center">
+        <span id="db-info">MySQL - proxypool</span>
+        <button class="btn btn-sm" onclick="backupDB()">Export</button>
+        <button class="btn btn-sm" onclick="openImportModal()">Import</button>
+      </div>
+    </div>
+    <div id="import-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000">
+      <div style="background:var(--panel);padding:24px;border-radius:12px;max-width:400px;margin:100px auto">
+        <h3>Import Database</h3>
+        <div style="margin:16px 0">
+          <label class="form-label">Mode</label>
+          <select id="import-mode" class="form-input">
+            <option value="append">Append (add to existing)</option>
+            <option value="replace">Replace (clear all first)</option>
+          </select>
+        </div>
+        <div style="margin:16px 0">
+          <label class="form-label">SQL File</label>
+          <input type="file" id="import-file" accept=".sql" class="form-input">
+        </div>
+        <div style="display:flex;gap:12px;justify-content:flex-end">
+          <button class="btn" onclick="document.getElementById('import-modal').style.display='none'">Cancel</button>
+          <button class="btn btn-primary" id="import-btn" onclick="importDB()">Import</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-group" style="border-top:1px solid var(--panel-light);padding-top:16px;margin-top:16px">
+      <label class="form-label" style="color:var(--danger)">Danger Zone - Delete Proxies</label>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <select id="delete-protocol" class="form-input" style="width:auto;min-width:120px">
+            <option value="all">All Protocols</option>
+            <option value="http">HTTP</option>
+            <option value="https">HTTPS</option>
+            <option value="socks4">SOCKS4</option>
+            <option value="socks5">SOCKS5</option>
+          </select>
+          <select id="delete-status" class="form-input" style="width:auto;min-width:120px">
+            <option value="all">All Status</option>
+            <option value="alive">Alive Only</option>
+            <option value="flaky">Flaky Only</option>
+            <option value="cooling">Cooling Only</option>
+            <option value="soft">Soft Only</option>
+            <option value="revived">Revived Only</option>
+            <option value="semi-revived">Semi-Revived Only</option>
+            <option value="dead">Dead Only</option>
+            <option value="untested">Untested Only</option>
+          </select>
+          <button class="btn btn-danger" onclick="bulkDeleteProxies()">Delete Selected</button>
+        </div>
+        <div style="font-size:12px;color:var(--muted)">
+          This will permanently delete proxies matching the criteria above. This action cannot be undone.
+        </div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" style="color:var(--danger)">Quick Actions</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-danger" onclick="clearDeadProxies()">Clear All Dead</button>
+        <button class="btn btn-sm btn-danger" onclick="clearByProtocol('http')">Clear HTTP</button>
+        <button class="btn btn-sm btn-danger" onclick="clearByProtocol('https')">Clear HTTPS</button>
+        <button class="btn btn-sm btn-danger" onclick="clearByProtocol('socks4')">Clear SOCKS4</button>
+        <button class="btn btn-sm btn-danger" onclick="clearByProtocol('socks5')">Clear SOCKS5</button>
+        <button class="btn btn-sm btn-danger" onclick="clearAllProxies()">Clear ALL</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADD PROXY MODAL -->
+<div id="modal-add" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-title">Add Proxy</div>
+      <button class="modal-close" onclick="closeModal('modal-add')">&times;</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Protocol</label>
+      <select id="add-proto" class="form-input" style="width:auto">
+        <option value="http">HTTP</option>
+        <option value="https">HTTPS</option>
+        <option value="socks4">SOCKS4</option>
+        <option value="socks5">SOCKS5</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">IP Address</label>
+      <input type="text" id="add-ip" class="form-input" placeholder="192.168.1.1">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Port</label>
+      <input type="number" id="add-port" class="form-input" placeholder="8080">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Username (optional)</label>
+      <input type="text" id="add-user" class="form-input">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password (optional)</label>
+      <input type="password" id="add-pass" class="form-input">
+    </div>
+    <button class="btn btn-primary" onclick="doAddProxy()">Add Proxy</button>
+  </div>
+</div>
+
+<!-- BULK ADD MODAL -->
+<div id="modal-bulk" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-title">Bulk Add Proxies</div>
+      <button class="modal-close" onclick="closeModal('modal-bulk')">&times;</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Proxies (one per line)</label>
+      <textarea id="bulk-proxies" class="form-input" style="min-height:200px" placeholder="protocol://ip:port&#10;protocol://user:pass@ip:port&#10;ip:port user pass"></textarea>
+    </div>
+    <button class="btn btn-primary" onclick="doBulkAdd()">Add Proxies</button>
+  </div>
+</div>
+
+<!-- EDIT PROXY MODAL -->
+<div id="modal-edit" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-title">Edit Proxy</div>
+      <button class="modal-close" onclick="closeModal('modal-edit')">&times;</button>
+    </div>
+    <input type="hidden" id="edit-id">
+    <div class="form-group">
+      <label class="form-label">Protocol</label>
+      <select id="edit-proto" class="form-input" style="width:auto">
+        <option value="http">HTTP</option>
+        <option value="https">HTTPS</option>
+        <option value="socks4">SOCKS4</option>
+        <option value="socks5">SOCKS5</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">IP Address</label>
+      <input type="text" id="edit-ip" class="form-input">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Port</label>
+      <input type="number" id="edit-port" class="form-input">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Username</label>
+      <input type="text" id="edit-user" class="form-input">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input type="password" id="edit-pass" class="form-input">
+    </div>
+    <button class="btn btn-primary" onclick="doEditProxy()">Save Changes</button>
+  </div>
+</div>
+
+<!-- ADVANCED SEARCH MODAL -->
+<div id="modal-adv-search" class="modal">
+  <div class="modal-content" style="max-width:600px;max-height:85vh;overflow:auto">
+    <div class="modal-header">
+      <div class="modal-title">Advanced Search</div>
+      <button class="modal-close" onclick="closeModal('modal-adv-search')">X</button>
+    </div>
+    <div id="adv-search-rules" style="margin-bottom:16px"></div>
+    <button class="btn btn-sm" onclick="addSearchRule()" style="margin-bottom:16px">+ Add Rule</button>
+    <div style="display:flex;gap:12px">
+      <button class="btn btn-primary" onclick="applyAdvancedSearch()">Apply</button>
+      <button class="btn" onclick="clearAdvancedSearch()">Clear</button>
+      <button class="btn" onclick="closeModal('modal-adv-search')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD MONITOR MODAL -->
+<div id="modal-add-monitor" class="modal">
+  <div class="modal-content" style="max-width:550px;max-height:85vh;overflow:auto">
+    <div class="modal-header">
+      <div class="modal-title">Add New Monitor Profile</div>
+      <button class="modal-close" onclick="closeModal('modal-add-monitor')">&times;</button>
+    </div>
+    
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Basic Settings</div>
+      <div class="form-group">
+        <label class="form-label">Profile Name *</label>
+        <input type="text" id="monitor-name" class="form-input" placeholder="e.g., socks4-alive-us" maxlength="50">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Unique name. Letters, numbers, dashes, underscores only.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Protocol Filter</label>
+        <select id="monitor-protocol" class="form-input">
+          <option value="">All Protocols</option>
+          <option value="http">HTTP</option>
+          <option value="https">HTTPS</option>
+          <option value="socks4">SOCKS4</option>
+          <option value="socks5">SOCKS5</option>
+          <option value="http,https">HTTP+HTTPS</option>
+          <option value="socks4,socks5">SOCKS4+SOCKS5</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Status Filter</label>
+        <div style="display:flex;gap:4px;align-items:center">
+          <div onclick="toggleMonitorStatus('alive')" id="monitor-status-alive" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:var(--success);color:#fff;font-size:11px;font-weight:500">Alive</div>
+          <div onclick="toggleMonitorStatus('flaky')" id="monitor-status-flaky" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:#f59e0b;color:#fff;font-size:11px;font-weight:500">Flaky</div>
+          <div onclick="toggleMonitorStatus('cooling')" id="monitor-status-cooling" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:#8b5cf6;color:#fff;font-size:11px;font-weight:500">Cooling</div>
+          <div onclick="toggleMonitorStatus('soft')" id="monitor-status-soft" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:#FF9800;color:#fff;font-size:11px;font-weight:500">Soft</div>
+          <div onclick="toggleMonitorStatus('revived')" id="monitor-status-revived" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:#757575;color:#fff;font-size:11px;font-weight:500">Revived</div>
+          <div onclick="toggleMonitorStatus('semi-revived')" id="monitor-status-semi-revived" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:#424242;color:#fff;font-size:11px;font-weight:500">Semi-Revived</div>
+          <div onclick="toggleMonitorStatus('dead')" id="monitor-status-dead" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:var(--danger);color:#fff;font-size:11px;font-weight:500">Dead</div>
+          <div onclick="toggleMonitorStatus('untested')" id="monitor-status-untested" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:var(--muted);color:#fff;font-size:11px;font-weight:500">Untested</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Check URLs (comma-separated)</label>
+        <input type="text" id="monitor-check-urls" class="form-input" placeholder="https://ident.me, https://ifconfig.me">
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Performance</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div class="form-group">
+          <label class="form-label">Threads</label>
+          <input type="number" id="monitor-threads" class="form-input" value="50">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Timeout (sec)</label>
+          <input type="number" id="monitor-timeout" class="form-input" value="5">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Probes</label>
+          <input type="number" id="monitor-probes" class="form-input" value="2">
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Run Mode</div>
+      <div class="form-group">
+        <label class="form-label">Mode</label>
+        <select id="monitor-run-mode" class="form-input" onchange="toggleRunModeOptions()">
+          <option value="once">Run Once</option>
+          <option value="infinite">Run Infinite (continuous)</option>
+          <option value="restart">Run After Complete (restart when done)</option>
+          <option value="schedule">Schedule</option>
+          <option value="custom">Custom Interval</option>
+        </select>
+      </div>
+      <div id="run-mode-options" style="display:none">
+        <div class="form-group" id="interval-option" style="display:none">
+          <label class="form-label">Interval (seconds)</label>
+          <input type="number" id="monitor-interval" class="form-input" value="60" placeholder="60">
+        </div>
+        <div id="schedule-option" style="display:none">
+          <div class="form-group">
+            <label class="form-label">Time (HH:MM)</label>
+            <input type="text" id="monitor-schedule-time" class="form-input" placeholder="02:00">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Days</label>
+            <select id="monitor-schedule-days" class="form-input">
+              <option value="daily">Every Day</option>
+              <option value="Mon,Tue,Wed,Thu,Fri">Weekdays (Mon-Fri)</option>
+              <option value="Sat,Sun">Weekends (Sat-Sun)</option>
+              <option value="Mon">Every Monday</option>
+              <option value="Wed">Every Wednesday</option>
+              <option value="Fri">Every Friday</option>
+              <option value="1,15">1st and 15th of Month</option>
+            </select>
+          </div>
+        </div>
+        <div id="custom-option" style="display:none">
+          <div class="form-group">
+            <label class="form-label">Run every (hours)</label>
+            <input type="number" id="monitor-custom-every" class="form-input" value="24" placeholder="24">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Advanced</div>
+      <div class="form-group">
+        <label class="form-label">GEO Extraction</label>
+        <select id="monitor-geo" class="form-input">
+          <option value="true">Enabled</option>
+          <option value="false">Disabled</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Create Systemd Service</label>
+        <select id="monitor-create-service" class="form-input">
+          <option value="no">No</option>
+          <option value="yes">Yes (auto-start on boot)</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:12px">
+      <button class="btn btn-primary" onclick="createMonitorProfile()">Create</button>
+      <button class="btn" onclick="closeModal('modal-add-monitor')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- SERVER SETTINGS MODAL -->
+<div id="modal-server-settings" class="modal">
+  <div class="modal-content" style="max-width:600px;max-height:80vh;overflow:auto">
+    <div class="modal-header">
+      <div class="modal-title">Server Settings</div>
+      <button class="modal-close" onclick="closeModal('modal-server-settings')">&times;</button>
+    </div>
+    <div id="server-settings-content" style="margin-bottom:16px"></div>
+    <div style="display:flex;gap:12px">
+      <button class="btn btn-primary" onclick="editServerSettings()">Edit & Restart</button>
+      <button class="btn" onclick="closeModal('modal-server-settings')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD SERVER MODAL -->
+<div id="modal-add-server" class="modal">
+  <div class="modal-content" style="max-width:700px;max-height:85vh;overflow:auto">
+    <div class="modal-header">
+      <div class="modal-title">Add New Server</div>
+      <button class="modal-close" onclick="closeModal('modal-add-server')">&times;</button>
+    </div>
+    
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Basic Settings</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        <div class="form-group">
+          <label class="form-label">Protocol</label>
+          <select id="server-proto" class="form-input">
+            <option value="http">HTTP</option>
+            <option value="https">HTTPS</option>
+            <option value="socks4">SOCKS4</option>
+            <option value="socks5">SOCKS5</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bind Address</label>
+          <input type="text" id="server-bind" class="form-input" value="0.0.0.0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Port</label>
+          <input type="number" id="server-port" class="form-input" value="8080">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Rotate Mode</label>
+          <select id="server-rotate" class="form-input">
+            <option value="fixed">Fixed</option>
+            <option value="per_connection">Per Connection</option>
+            <option value="better_cost" selected>Better Cost</option>
+            <option value="time">Time</option>
+            <option value="sticky">Sticky</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Rotation Settings</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        <div class="form-group">
+          <label class="form-label">Rotate Interval</label>
+          <input type="number" id="server-rotate-interval" class="form-input" value="60">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Min Cost</label>
+          <input type="number" id="server-min-cost" class="form-input" value="0.0" step="0.1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cost Threshold</label>
+          <input type="number" id="server-cost" class="form-input" value="" placeholder="Optional" step="0.1">
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Authentication</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div class="form-group">
+          <label class="form-label">Upstream Auth</label>
+          <select id="server-auth-required" class="form-input">
+            <option value="">Any</option>
+            <option value="auth">With Auth</option>
+            <option value="no_auth">No Auth</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" id="server-user" class="form-input" placeholder="Client username">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" id="server-pass" class="form-input" placeholder="Client password">
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">TLS/SSL (for HTTPS)</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+        <div class="form-group">
+          <label class="form-label">Cert File (PEM)</label>
+          <input type="text" id="server-certfile" class="form-input" placeholder="/path/to/cert.pem">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Key File (PEM)</label>
+          <input type="text" id="server-keyfile" class="form-input" placeholder="/path/to/key.pem">
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Upstream Proxy</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div class="form-group">
+          <label class="form-label">Sticky Upstream</label>
+          <input type="text" id="server-sticky-upstream" class="form-input" placeholder="socks5://user:pass@ip:port">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Upstream Protocol</label>
+          <input type="text" id="server-upstream-proto" class="form-input" placeholder="http,https,socks5">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Insecure Upstream</label>
+          <select id="server-insecure-upstream" class="form-input">
+            <option value="false">No</option>
+            <option value="true">Yes</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Proxy Filters</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div class="form-group">
+          <label class="form-label">Country Codes</label>
+          <input type="text" id="server-country" class="form-input" placeholder="US,GB,DE">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Regions</label>
+          <input type="text" id="server-regions" class="form-input" placeholder="California,Texas">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cities</label>
+          <input type="text" id="server-cities" class="form-input" placeholder="Los Angeles,New York">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Organizations</label>
+          <input type="text" id="server-orgs" class="form-input" placeholder="Org name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ISP</label>
+          <input type="text" id="server-isp" class="form-input" placeholder="ISP name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ASN</label>
+          <input type="text" id="server-asn" class="form-input" placeholder="AS12345">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Continent Code</label>
+          <input type="text" id="server-continent" class="form-input" placeholder="NA,EU">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Zip Codes</label>
+          <input type="text" id="server-zip" class="form-input" placeholder="10001,90001">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Timezones</label>
+          <input type="text" id="server-timezones" class="form-input" placeholder="America/New_York">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Mobile</label>
+          <select id="server-mobile" class="form-input">
+            <option value="">Any</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Proxy</label>
+          <select id="server-proxy" class="form-input">
+            <option value="">Any</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Hosting</label>
+          <select id="server-hosting" class="form-input">
+            <option value="">Any</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:12px;margin-top:16px">
+      <button class="btn btn-primary" onclick="createServerProfile()">Create Profile</button>
+      <button class="btn" onclick="closeModal('modal-add-server')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- USERS MODAL -->
+<div id="modal-users" class="modal">
+  <div class="modal-content" style="max-width:700px;max-height:80vh;overflow:auto">
+    <div class="modal-header">
+      <div class="modal-title">User Management</div>
+      <button class="modal-close" onclick="closeModal('modal-users')">&times;</button>
+    </div>
+    <div style="margin-bottom:16px">
+      <button class="btn btn-primary" onclick="showAddUserModal()">+ Add User</button>
+    </div>
+    <div id="users-list"></div>
+  </div>
+</div>
+
+<!-- ADD/EDIT USER MODAL -->
+<div id="modal-user-form" class="modal">
+  <div class="modal-content" style="max-width:600px">
+    <div class="modal-header">
+      <div class="modal-title" id="user-form-title">Add User</div>
+      <button class="modal-close" onclick="closeModal('modal-user-form')">&times;</button>
+    </div>
+    <input type="hidden" id="edit-user-id">
+    <div class="form-group">
+      <label class="form-label">Username</label>
+      <input type="text" id="user-username" class="form-input">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input type="password" id="user-password" class="form-input">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Role</label>
+      <select id="user-role" class="form-input" onchange="updateRolePermissions()">
+        <option value="user">User - Basic access</option>
+        <option value="superadmin">Superadmin - Advanced access</option>
+        <option value="admin">Admin - Full access</option>
+      </select>
+    </div>
+    <div id="role-description" style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:16px;font-size:12px;color:var(--muted)">
+      <div id="role-desc-user" style="display:block">
+        <strong>User</strong> - Can view proxies and server status only. Can be customized with additional permissions.
+      </div>
+      <div id="role-desc-superadmin" style="display:none">
+        <strong>Superadmin</strong> - Can manage proxies, monitor, server, and settings. Cannot manage users.
+      </div>
+      <div id="role-desc-admin" style="display:none">
+        <strong>Admin</strong> - Full access to everything including user management.
+      </div>
+    </div>
+    <div class="form-group" id="custom-perms-group">
+      <label class="form-label">Custom Permissions</label>
+      <div id="custom-perms-list" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:12px"></div>
+      <div id="proxy-filters-group" style="display:none;margin-top:16px">
+        <div onclick="togglePermCategory('proxy-filters')" style="font-weight:600;font-size:12px;color:var(--accent);margin-bottom:8px;padding:6px 8px;background:var(--panel-light);border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center">
+          <span>Proxy Access Filters</span>
+          <span id="proxy-filters-icon">▶</span>
+        </div>
+        <div id="proxy-filters" style="display:none;padding:4px 0">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Restrict which proxies this user can see</div>
+          <div style="margin-bottom:16px">
+            <div style="font-size:12px;font-weight:500;margin-bottom:4px">Allowed Statuses:</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <label><input type="checkbox" class="proxy-filter-status" value="alive"> Alive</label>
+              <label><input type="checkbox" class="proxy-filter-status" value="flaky"> Flaky</label>
+              <label><input type="checkbox" class="proxy-filter-status" value="cooling"> Cooling</label>
+              <label><input type="checkbox" class="proxy-filter-status" value="soft"> Soft</label>
+              <label><input type="checkbox" class="proxy-filter-status" value="revived"> Revived</label>
+              <label><input type="checkbox" class="proxy-filter-status" value="semi-revived"> Semi-Revived</label>
+              <label><input type="checkbox" class="proxy-filter-status" value="dead"> Dead</label>
+              <label><input type="checkbox" class="proxy-filter-status" value="untested"> Untested</label>
+            </div>
+          </div>
+          <div style="margin-top:16px">
+            <div style="font-size:12px;font-weight:500;margin-bottom:4px">Allowed Protocols:</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <label><input type="checkbox" class="proxy-filter-proto" value="http"> HTTP</label>
+              <label><input type="checkbox" class="proxy-filter-proto" value="https"> HTTPS</label>
+              <label><input type="checkbox" class="proxy-filter-proto" value="socks4"> SOCKS4</label>
+              <label><input type="checkbox" class="proxy-filter-proto" value="socks5"> SOCKS5</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="user-active" checked> Active
+      </label>
+    </div>
+    <div style="display:flex;gap:12px">
+      <button class="btn btn-primary" onclick="saveUser()">Save</button>
+      <button class="btn" onclick="closeModal('modal-user-form')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRMATION MODAL -->
+<div id="modal-confirm" class="modal">
+  <div class="modal-content" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title" id="confirm-title">Confirm</div>
+      <button class="modal-close" onclick="closeConfirmModal()">&times;</button>
+    </div>
+    <div id="confirm-message" style="margin-bottom:20px;font-size:14px"></div>
+    <div style="display:flex;gap:12px;justify-content:flex-end">
+      <button class="btn" onclick="closeConfirmModal()">Cancel</button>
+      <button class="btn btn-danger" id="confirm-btn" onclick="confirmAction()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ALERT MODAL -->
+<div id="modal-alert" class="modal">
+  <div class="modal-content" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title" id="alert-title">Alert</div>
+      <button class="modal-close" onclick="closeAlertModal()">&times;</button>
+    </div>
+    <div id="alert-message" style="margin-bottom:20px;font-size:14px"></div>
+    <div style="display:flex;gap:12px;justify-content:flex-end">
+      <button class="btn btn-primary" onclick="closeAlertModal()">OK</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

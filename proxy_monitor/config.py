@@ -1,0 +1,35 @@
+import argparse
+
+THREADS = 50
+TIMEOUT = 5
+PROBES_PER_PROXY = 2
+CHECK_URLS = ["https://ident.me", "https://ifconfig.me"]
+PROBE_JITTER = (0.1, 0.5)
+SHUFFLE_BIAS = 0.0
+SPEED_THRESHOLD_MS = 5000
+RECENT_FAIL_SECONDS = 300
+
+DEFAULT_PROTOCOL = "all"
+DEFAULT_RUN_MODE = "once"
+DEFAULT_INTERVAL = 60
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Proxy Monitor")
+    parser.add_argument("--protocol", help="Protocol filter (http,https,socks4,socks5, comma-separated)")
+    parser.add_argument("--status", help="Status filter (alive,flaky,cooling,dead,untested, comma-separated)")
+    parser.add_argument("--check-urls", help="Comma-separated check URLs")
+    parser.add_argument("--threads", type=int, default=THREADS, help="Number of threads")
+    parser.add_argument("--timeout", type=int, default=TIMEOUT, help="Request timeout")
+    parser.add_argument("--probes", type=int, default=PROBES_PER_PROXY, help="Number of probes per proxy")
+    parser.add_argument("--name", help="Monitor name")
+    parser.add_argument("--run-mode", default=DEFAULT_RUN_MODE, 
+                       choices=["once", "infinite", "restart", "schedule", "custom"],
+                       help="Run mode")
+    parser.add_argument("--interval", type=int, default=DEFAULT_INTERVAL, help="Interval in seconds")
+    parser.add_argument("--schedule-time", help="Schedule time (HH:MM)")
+    parser.add_argument("--schedule-days", default="daily", help="Schedule days")
+    parser.add_argument("--custom-every", type=int, default=24, help="Custom interval in hours")
+    parser.add_argument("--geo", default="true", choices=["true", "false"], help="Enable GEO extraction")
+    parser.add_argument("--monitor-id", help="Unique monitor ID for progress tracking")
+    return parser.parse_args()
