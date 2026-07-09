@@ -6,7 +6,7 @@ DB_PATH = "proxies.db"
 PROTOCOLS = ["http", "https", "socks4", "socks5"]
 ROTATE_MODES = ["fixed", "per_connection", "better_cost", "time", "sticky"]
 
-JWT_SECRET = os.environ.get("JWT_SECRET", secrets.token_hex(32))
+JWT_SECRET = os.environ.get("JWT_SECRET", os.environ.get("FLASK_SECRET_KEY", "dev-jwt-secret-change-me"))
 JWT_EXPIRY_HOURS = 24
 
 HIDDEN_COLS = {

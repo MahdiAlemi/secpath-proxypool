@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import signal
 import time
 import glob
@@ -334,7 +335,7 @@ def api_monitor_start():
             dbs.query(MonitorTested).filter_by(session_id=monitor_id).delete()
             dbs.query(MonitorSession).filter_by(id=monitor_id).delete()
 
-        args_list = ["python3", "-u", monitor_path]
+        args_list = [sys.executable, "-u", monitor_path]
         
         if saved_config.get("protocol"):
             args_list.extend(["--protocol", saved_config["protocol"]])
@@ -368,20 +369,22 @@ def api_monitor_start():
         safe_name = config[monitor_id].get("safe_name", monitor_id.replace("monitor_", ""))
         service_name = f"proxy-monitor-{safe_name}"
 
-        shell_cmd = "nohup " + " ".join(args_list) + " > /dev/null 2>&1 & echo $!"
-        
+        log_file = os.path.join(root_dir, f"{monitor_id}.log")
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        log_handle = open(log_file, "ab", buffering=0)
         proc = subprocess.Popen(
-            ["bash", "-c", shell_cmd],
+            args_list,
             cwd=root_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
         )
+        actual_pid = str(proc.pid)
+        time.sleep(0.5)
         
-        stdout, _ = proc.communicate()
-        actual_pid = stdout.strip()
-        
-        if actual_pid and actual_pid.isdigit():
+        if actual_pid and actual_pid.isdigit() and proc.poll() is None:
             config[monitor_id]["pid"] = actual_pid
             config[monitor_id]["proxy_count"] = proxy_count
             config[monitor_id]["start_time"] = datetime.now(timezone.utc).isoformat()
@@ -398,7 +401,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory={root_dir}
-ExecStart={" ".join(args_list)}
+ExecStart={" ".join(__import__("shlex").quote(a) for a in args_list)}
 Restart={restart_policy}
 RestartSec=10
 
@@ -593,7 +596,7 @@ def api_monitor_resume():
     root_dir = os.path.dirname(os.path.dirname(base_dir))
     monitor_path = os.path.join(root_dir, "proxy_monitor", "app.py")
     
-    args_list = ["python3", "-u", monitor_path]
+    args_list = [sys.executable, "-u", monitor_path]
     
     if saved_config.get("protocol"):
         args_list.extend(["--protocol", saved_config["protocol"]])
@@ -623,20 +626,22 @@ def api_monitor_resume():
         args_list.extend(["--geo", saved_config["geo"]])
     args_list.extend(["--monitor-id", monitor_id])
     
-    shell_cmd = "nohup " + " ".join(args_list) + " > /dev/null 2>&1 & echo $!"
-    
+    log_file = os.path.join(root_dir, f"{monitor_id}.log")
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    log_handle = open(log_file, "ab", buffering=0)
     proc = subprocess.Popen(
-        ["bash", "-c", shell_cmd],
+        args_list,
         cwd=root_dir,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
+        stdout=log_handle,
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+        close_fds=True,
     )
+    actual_pid = str(proc.pid)
+    time.sleep(0.5)
     
-    stdout, _ = proc.communicate()
-    actual_pid = stdout.strip()
-    
-    if actual_pid and actual_pid.isdigit():
+    if actual_pid and actual_pid.isdigit() and proc.poll() is None:
         config[monitor_id]["pid"] = actual_pid
         config[monitor_id]["start_time"] = datetime.now(timezone.utc).isoformat()
         config[monitor_id]["end_time"] = None

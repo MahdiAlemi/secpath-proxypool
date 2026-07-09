@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import signal
 import time
 import glob
@@ -213,7 +214,7 @@ def api_server_start():
         args_list.extend(["--keyfile", data["keyfile"]])
 
     if data.get("insecure_upstream"):
-        args_list.append("--insecure-upstream")
+        args_list.append("--insecure_upstream")
     if data.get("sticky_upstream"):
         args_list.extend(["--sticky_upstream", data["sticky_upstream"]])
     if data.get("upstream_protocol"):
@@ -249,45 +250,29 @@ def api_server_start():
             args_list.append("--readonly")
 
     try:
-        subprocess.run(["bash", "-c", f"pkill -f 'server.py.*{data.get('port', 8080)}'"], capture_output=True)
-        time.sleep(1)
-        
-        shell_cmd = f"nohup python3 -u {server_path} " + " ".join(args_list) + f" >> {log_file} 2>&1 & echo $!"
-        
+        # Security: never build a shell command from user-controlled values.
+        # Popen(list, shell=False) passes each argument literally and prevents shell injection.
+        cmd = [sys.executable, "-u", server_path] + args_list
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        log_handle = open(log_file, "ab", buffering=0)
         proc = subprocess.Popen(
-            ["bash", "-c", shell_cmd],
+            cmd,
             cwd=root_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
         )
-        
-        stdout, _ = proc.communicate()
-        actual_pid = stdout.strip()
-        
-        if actual_pid and actual_pid.isdigit():
+        actual_pid = str(proc.pid)
+        time.sleep(0.5)
+        if proc.poll() is None:
             config = load_servers_config()
             config[port] = {"pid": actual_pid, "protocol": data.get("protocol", "http"), "config": data}
             save_servers_config(config)
             log(f"Server started on port {port} with PID {actual_pid}")
             return jsonify({"success": True, "pid": int(actual_pid), "port": port})
-        
-        time.sleep(1)
-        for p in glob.glob("/proc/*/cmdline"):
-            try:
-                with open(p, 'rb') as f:
-                    cmd = f.read()
-                    if b'server.py' in cmd and str(data.get('port', 8080)).encode() in cmd:
-                        actual_pid = p.split('/')[2]
-                        config = load_servers_config()
-                        config[port] = {"pid": actual_pid, "protocol": data.get("protocol", "http"), "config": data}
-                        save_servers_config(config)
-                        log(f"Server started on port {port} with PID {actual_pid}")
-                        return jsonify({"success": True, "pid": int(actual_pid), "port": port})
-            except:
-                pass
-        
-        return jsonify({"success": False, "error": "Failed to start server"})
+        return jsonify({"success": False, "error": f"Server exited immediately. Check {os.path.basename(log_file)}"})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
@@ -310,7 +295,7 @@ def api_server_stop():
             try:
                 os.kill(int(pid), signal.SIGTERM)
                 time.sleep(1)
-                if psutil.pid_exists(pid):
+                if psutil.pid_exists(int(pid)):
                     os.kill(int(pid), signal.SIGKILL)
             except Exception as e:
                 pass
