@@ -437,8 +437,8 @@ function toggleColumn(col, show) {
   if (!hasPermission('proxies.columns')) return;
   
   var display = show ? '' : 'none';
-  var colMap = {protocol: 2, port: 3, status: 4, cost: 5, speed: 6, alive: 7, fails: 8, country: 9, region: 10, city: 11, isp: 12, asn: 13, org: 14, mobile: 15, hosting: 16, lastalive: 17, lastcheck: 18};
-  var colIdx = colMap[col];
+  var header = document.querySelector('#proxies-table th[data-col="' + col + '"]');
+  var colIdx = header ? (Array.prototype.indexOf.call(header.parentNode.children, header) + 1) : null;
   
   if (colIdx) {
     document.querySelectorAll('#proxies-table th:nth-child(' + colIdx + ')').forEach(function(el) { el.style.display = display; });
@@ -834,6 +834,10 @@ function showBulkAdd() {
   document.getElementById('modal-bulk').classList.add('active');
 }
 
+function capabilityMark(v) {
+  return v ? '<span style="color:var(--success);font-weight:700">✓</span>' : '<span style="color:var(--muted)">-</span>';
+}
+
 async function loadProxies() {
   await loadStats();
   
@@ -923,6 +927,10 @@ async function loadProxies() {
       '<td class="col-toggle" data-col="recency">' + (p.recency_score != null ? (p.recency_score).toFixed(3) : '-') + '</td>' +
       '<td class="col-toggle" data-col="prev_cost">' + (p.previous_cost != null ? (p.previous_cost).toFixed(3) : '-') + '</td>' +
       '<td class="col-toggle" data-col="speed">' + (p.speed_ms || '-') + 'ms</td>' +
+      '<td class="col-toggle" data-col="web_https">' + capabilityMark(p.web_https_ok) + '</td>' +
+      '<td class="col-toggle" data-col="remote_dns">' + capabilityMark(p.remote_dns_ok) + '</td>' +
+      '<td class="col-toggle" data-col="telegram">' + capabilityMark(p.telegram_ok) + '</td>' +
+      '<td class="col-toggle" data-col="exit_ip">' + (p.exit_ip || '-') + '</td>' +
       '<td class="col-toggle" data-col="alive">' + (p.alive_hits || 0) + '</td>' +
       '<td class="col-toggle" data-col="fails">' + (p.fail_hits || 0) + '</td>' +
       '<td class="col-toggle" data-col="total_checks">' + (p.total_checks || 0) + '</td>' +
@@ -1086,7 +1094,10 @@ async function testProxy(id) {
   var data = await res.json();
 
   btn.textContent = data.result === 'alive' ? 'Alive' : 'Dead';
-  setTimeout(function() { btn.textContent = 'Test'; btn.disabled = false; }, 2000);
+  if (data.validation) {
+    showAlert('HTTPS: ' + (data.validation.web_https_ok ? 'OK' : 'NO') + ' | DNS: ' + (data.validation.remote_dns_ok ? 'OK' : 'NO') + ' | Telegram: ' + (data.validation.telegram_ok ? 'OK' : 'NO') + ' | Exit: ' + (data.validation.exit_ip || '-'));
+  }
+  setTimeout(function() { btn.textContent = 'Test'; btn.disabled = false; loadProxies(); }, 2000);
 }
 
 async function exportProxies(fmt) {
@@ -1923,6 +1934,8 @@ async function checkServerStatus() {
           '<div class="server-card-row"><span class="server-card-label">Min Cost</span><span class="server-card-value">$' + (cfg.min_cost || 0) + '</span></div>' +
           '<div class="server-card-row"><span class="server-card-label">Cost Threshold</span><span class="server-card-value">$' + (cfg.cost_threshold || 0.3) + '</span></div>' +
           '<div class="server-card-row"><span class="server-card-label">Candidates</span><span class="server-card-value">' + (cfg.candidate_statuses || 'alive') + '</span></div>' +
+          '<div class="server-card-row"><span class="server-card-label">HTTPS OK</span><span class="server-card-value">' + (cfg.require_web_https === false ? 'No' : 'Yes') + '</span></div>' +
+          '<div class="server-card-row"><span class="server-card-label">Telegram</span><span class="server-card-value">' + (cfg.require_telegram ? 'Yes' : 'No') + '</span></div>' +
         '</div>' +
         '<div class="server-card-footer">' +
           (s.running ? '<button class="btn btn-sm btn-danger" onclick="stopServer(\'' + port + '\')">Stop</button>' : '<button class="btn btn-sm btn-primary" onclick="startServer(\'' + port + '\')">Start</button>') +
@@ -1966,6 +1979,9 @@ async function startServerFromModal() {
     insecure_upstream: getVal('server-insecure-upstream') === 'true',
     upstream_protocol: getVal('server-upstream-proto') || null,
     candidate_statuses: getVal('server-candidate-statuses', 'alive') || 'alive',
+    require_web_https: getVal('server-require-web-https', 'true') === 'true',
+    require_remote_dns: getVal('server-require-remote-dns', 'false') === 'true',
+    require_telegram: getVal('server-require-telegram', 'false') === 'true',
     countryCodes: getVal('server-country') || null,
     regions: getVal('server-regions') || null,
     cities: getVal('server-cities') || null,
@@ -2047,6 +2063,9 @@ async function showServerSettings(port) {
   document.getElementById('server-sticky-upstream').value = cfg.sticky_upstream || '';
   document.getElementById('server-upstream-proto').value = cfg.upstream_protocol || '';
   document.getElementById('server-candidate-statuses').value = cfg.candidate_statuses || 'alive';
+  document.getElementById('server-require-web-https').value = String(cfg.require_web_https !== false);
+  document.getElementById('server-require-remote-dns').value = String(!!cfg.require_remote_dns);
+  document.getElementById('server-require-telegram').value = String(!!cfg.require_telegram);
   document.getElementById('server-insecure-upstream').value = cfg.insecure_upstream ? 'true' : 'false';
   document.getElementById('server-country').value = cfg.countryCodes || '';
   document.getElementById('server-regions').value = cfg.regions || '';
@@ -2089,6 +2108,9 @@ function showAddServerForm() {
   document.getElementById('server-sticky-upstream').value = '';
   document.getElementById('server-upstream-proto').value = '';
   document.getElementById('server-candidate-statuses').value = 'alive';
+  document.getElementById('server-require-web-https').value = 'true';
+  document.getElementById('server-require-remote-dns').value = 'false';
+  document.getElementById('server-require-telegram').value = 'false';
   document.getElementById('server-insecure-upstream').value = 'false';
   document.getElementById('server-country').value = '';
   document.getElementById('server-regions').value = '';
@@ -2145,6 +2167,9 @@ async function updateServerProfile() {
     insecure_upstream: getVal('server-insecure-upstream') === 'true',
     upstream_protocol: getVal('server-upstream-proto') || null,
     candidate_statuses: getVal('server-candidate-statuses', 'alive') || 'alive',
+    require_web_https: getVal('server-require-web-https', 'true') === 'true',
+    require_remote_dns: getVal('server-require-remote-dns', 'false') === 'true',
+    require_telegram: getVal('server-require-telegram', 'false') === 'true',
     countryCodes: getVal('server-country') || null,
     regions: getVal('server-regions') || null,
     cities: getVal('server-cities') || null,
@@ -2220,6 +2245,9 @@ async function startServer(port) {
       insecure_upstream: getVal('server-insecure-upstream') === 'true',
       upstream_protocol: getVal('server-upstream-proto') || null,
     candidate_statuses: getVal('server-candidate-statuses', 'alive') || 'alive',
+    require_web_https: getVal('server-require-web-https', 'true') === 'true',
+    require_remote_dns: getVal('server-require-remote-dns', 'false') === 'true',
+    require_telegram: getVal('server-require-telegram', 'false') === 'true',
       countryCodes: getVal('server-country') || null,
       regions: getVal('server-regions') || null,
       cities: getVal('server-cities') || null,
@@ -2313,6 +2341,9 @@ async function createServerProfile() {
     insecure_upstream: getVal('server-insecure-upstream') === 'true',
     upstream_protocol: getVal('server-upstream-proto') || null,
     candidate_statuses: getVal('server-candidate-statuses', 'alive') || 'alive',
+    require_web_https: getVal('server-require-web-https', 'true') === 'true',
+    require_remote_dns: getVal('server-require-remote-dns', 'false') === 'true',
+    require_telegram: getVal('server-require-telegram', 'false') === 'true',
     countryCodes: getVal('server-country') || null,
     regions: getVal('server-regions') || null,
     cities: getVal('server-cities') || null,

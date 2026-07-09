@@ -217,6 +217,12 @@ def api_server_start():
         args_list.extend(["--upstream_protocol", data["upstream_protocol"]])
     if data.get("candidate_statuses"):
         args_list.extend(["--candidate_statuses", data["candidate_statuses"]])
+    if data.get("require_web_https"):
+        args_list.append("--require_web_https")
+    if data.get("require_remote_dns"):
+        args_list.append("--require_remote_dns")
+    if data.get("require_telegram"):
+        args_list.append("--require_telegram")
 
     if data.get("countryCodes"):
         args_list.extend(["--countryCodes", data["countryCodes"]])

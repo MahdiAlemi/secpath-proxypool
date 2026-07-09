@@ -70,6 +70,15 @@ class Proxy(Base):
     mobile = Column(Integer, nullable=True)  # TINYINT in MySQL
     proxy = Column(Integer, nullable=True)
     hosting = Column(Integer, nullable=True)
+
+    # Phase 8 validation capabilities
+    web_http_ok = Column(Boolean, default=False)
+    web_https_ok = Column(Boolean, default=False)
+    remote_dns_ok = Column(Boolean, default=False)
+    telegram_ok = Column(Boolean, default=False)
+    exit_ip = Column(String(45), nullable=True)
+    validation_profile = Column(String(50), nullable=True)
+    validation_summary = Column(JSON, nullable=True)
     
     # Meta
     last_geo = Column(DateTime, nullable=True)
@@ -134,6 +143,13 @@ class Proxy(Base):
             'mobile': self.mobile,
             'proxy': self.proxy,
             'hosting': self.hosting,
+            'web_http_ok': bool(self.web_http_ok),
+            'web_https_ok': bool(self.web_https_ok),
+            'remote_dns_ok': bool(self.remote_dns_ok),
+            'telegram_ok': bool(self.telegram_ok),
+            'exit_ip': self.exit_ip,
+            'validation_profile': self.validation_profile,
+            'validation_summary': self.validation_summary,
             'last_geo': self.last_geo.isoformat() if self.last_geo else None,
             'status': self.status,
             'previous_state': self.previous_state,
@@ -256,9 +272,50 @@ class Database:
         self.Session = scoped_session(sessionmaker(bind=self.engine))
     
     def create_tables(self):
-        """Create all tables"""
+        """Create all tables and apply additive schema upgrades."""
         Base.metadata.create_all(self.engine)
+        self.ensure_schema_upgrades()
         print("[+] Database tables created successfully")
+
+    def ensure_schema_upgrades(self):
+        """Add missing columns introduced by newer phases.
+
+        create_all() does not ALTER existing SQLite/MySQL tables. Keep this
+        additive-only so existing deployments can be upgraded without Alembic.
+        """
+        from sqlalchemy import inspect, text
+        if not self.engine:
+            return
+        inspector = inspect(self.engine)
+        try:
+            existing = {c['name'] for c in inspector.get_columns('proxies')}
+        except Exception:
+            return
+        dialect = self.engine.dialect.name
+        if dialect == 'mysql':
+            definitions = {
+                'web_http_ok': 'BOOLEAN DEFAULT FALSE',
+                'web_https_ok': 'BOOLEAN DEFAULT FALSE',
+                'remote_dns_ok': 'BOOLEAN DEFAULT FALSE',
+                'telegram_ok': 'BOOLEAN DEFAULT FALSE',
+                'exit_ip': 'VARCHAR(45) NULL',
+                'validation_profile': 'VARCHAR(50) NULL',
+                'validation_summary': 'JSON NULL',
+            }
+        else:
+            definitions = {
+                'web_http_ok': 'BOOLEAN DEFAULT 0',
+                'web_https_ok': 'BOOLEAN DEFAULT 0',
+                'remote_dns_ok': 'BOOLEAN DEFAULT 0',
+                'telegram_ok': 'BOOLEAN DEFAULT 0',
+                'exit_ip': 'VARCHAR(45)',
+                'validation_profile': 'VARCHAR(50)',
+                'validation_summary': 'JSON',
+            }
+        with self.engine.begin() as conn:
+            for col, ddl in definitions.items():
+                if col not in existing:
+                    conn.execute(text(f'ALTER TABLE proxies ADD COLUMN {col} {ddl}'))
     
     def drop_tables(self):
         """Drop all tables (use with caution!)"""
@@ -303,6 +360,10 @@ db = Database()
 def init_db():
     """Initialize database - create tables"""
     db.create_tables()
+
+def ensure_db_schema():
+    """Apply additive schema upgrades without recreating tables."""
+    db.ensure_schema_upgrades()
 
 def get_db_session():
     """Get database session context manager"""

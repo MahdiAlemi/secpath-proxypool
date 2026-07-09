@@ -98,5 +98,30 @@
     "start_time": "2026-07-09T14:06:39.619567+00:00",
     "end_time": "2026-07-09T14:07:25.787146+00:00",
     "service": null
+  },
+  "monitor_new-test": {
+    "name": "new test",
+    "safe_name": "new-test",
+    "pid": null,
+    "config": {
+      "name": "new test",
+      "protocol": "",
+      "status": "alive,soft",
+      "check_urls": "",
+      "threads": 50,
+      "timeout": 5,
+      "probes": 2,
+      "run_mode": "once",
+      "interval": 60,
+      "schedule_time": "",
+      "schedule_days": "daily",
+      "custom_every": 24,
+      "geo": "true",
+      "create_service": "no"
+    },
+    "proxy_count": 413,
+    "start_time": "2026-07-09T14:39:34.466926+00:00",
+    "end_time": "2026-07-09T14:41:36.801052+00:00",
+    "service": null
   }
 }

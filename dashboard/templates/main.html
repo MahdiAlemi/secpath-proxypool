@@ -95,6 +95,10 @@ userProxyFilters = {{ proxy_filters | tojson }};
               <label style="display:block;margin:4px 0"><input type="checkbox" onchange="toggleColumn('recency', this.checked)"> Recency Score</label>
               <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('prev_cost', this.checked)"> Previous Cost</label>
               <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('speed', this.checked)"> Speed</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('web_https', this.checked)"> HTTPS OK</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('remote_dns', this.checked)"> Remote DNS</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('telegram', this.checked)"> Telegram</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('exit_ip', this.checked)"> Exit IP</label>
               <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('alive', this.checked)"> Alive Hits</label>
               <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('fails', this.checked)"> Fail Hits</label>
               <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('total_checks', this.checked)"> Total Checks</label>
@@ -140,6 +144,10 @@ userProxyFilters = {{ proxy_filters | tojson }};
                 <th class="sortable col-toggle" data-col="recency" onclick="sortTable('recency')">Recency</th>
                 <th class="sortable col-toggle" data-col="prev_cost" onclick="sortTable('previous_cost')">Prev Cost</th>
                 <th class="sortable col-toggle" data-col="speed" onclick="sortTable('speed_ms')">Speed</th>
+                <th class="sortable col-toggle" data-col="web_https" onclick="sortTable('web_https_ok')">HTTPS OK</th>
+                <th class="sortable col-toggle" data-col="remote_dns" onclick="sortTable('remote_dns_ok')">Remote DNS</th>
+                <th class="sortable col-toggle" data-col="telegram" onclick="sortTable('telegram_ok')">Telegram</th>
+                <th class="sortable col-toggle" data-col="exit_ip" onclick="sortTable('exit_ip')">Exit IP</th>
                 <th class="sortable col-toggle" data-col="alive" onclick="sortTable('alive_hits')">Alive</th>
                 <th class="sortable col-toggle" data-col="fails" onclick="sortTable('fail_hits')">Fails</th>
                 <th class="sortable col-toggle" data-col="total_checks" onclick="sortTable('total_checks')">Total</th>
@@ -607,7 +615,7 @@ userProxyFilters = {{ proxy_filters | tojson }};
       </div>
       <div class="form-group">
         <label class="form-label">Check URLs (comma-separated)</label>
-        <input type="text" id="monitor-check-urls" class="form-input" placeholder="https://ident.me, https://ifconfig.me">
+        <input type="text" id="monitor-check-urls" class="form-input" placeholder="https://api.ipify.org, https://ident.me">
       </div>
     </div>
 
@@ -830,6 +838,27 @@ userProxyFilters = {{ proxy_filters | tojson }};
           <label class="form-label">Candidate Statuses</label>
           <input type="text" id="server-candidate-statuses" class="form-input" value="alive" placeholder="alive or alive,soft">
           <div style="font-size:11px;color:var(--muted);margin-top:4px">Production default: alive. Dev/testing: alive,soft.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Require HTTPS OK</label>
+          <select id="server-require-web-https" class="form-input">
+            <option value="false">No</option>
+            <option value="true" selected>Yes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Require Remote DNS</label>
+          <select id="server-require-remote-dns" class="form-input">
+            <option value="false" selected>No</option>
+            <option value="true">Yes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Require Telegram OK</label>
+          <select id="server-require-telegram" class="form-input">
+            <option value="false" selected>No</option>
+            <option value="true">Yes</option>
+          </select>
         </div>
       </div>
     </div>

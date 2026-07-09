@@ -1,11 +1,10 @@
 import queue
 import random
 import time
-import subprocess
 
 from proxy_monitor import config as pm_config
 from proxy_monitor.utils.logging import log, STOP
-from proxy_monitor.utils.network import build_curl_args
+from proxy_monitor.utils.validation import validate_proxy
 from proxy_monitor.workers.tester import test_proxy, result_q
 
 
@@ -32,13 +31,10 @@ def worker_infinite(jobs):
         user = job.get("username")
         pwd = job.get("password")
         
-        url = random.choice(pm_config.CHECK_URLS)
-        start = time.perf_counter()
         try:
-            args = build_curl_args(proto, user, pwd, ip, port, url, pm_config.TIMEOUT)
-            res = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=pm_config.TIMEOUT+1, check=False)
-            elapsed_ms = int((time.perf_counter() - start) * 1000)
-            ok = bool(res.stdout and res.stdout.strip())
+            capability = validate_proxy(job, timeout=pm_config.TIMEOUT, telegram=True)
+            ok = bool(capability.get("ok"))
+            elapsed_ms = capability.get("speed_ms") or 0
             
             from database import Proxy
             from database import db
@@ -47,6 +43,13 @@ def worker_infinite(jobs):
                 if proxy:
                     from datetime import datetime, timezone
                     now = datetime.now(timezone.utc)
+                    proxy.web_http_ok = bool(capability.get("web_http_ok"))
+                    proxy.web_https_ok = bool(capability.get("web_https_ok"))
+                    proxy.remote_dns_ok = bool(capability.get("remote_dns_ok"))
+                    proxy.telegram_ok = bool(capability.get("telegram_ok"))
+                    proxy.exit_ip = capability.get("exit_ip")
+                    proxy.validation_profile = "telegram" if proxy.telegram_ok else ("web" if proxy.web_https_ok else "basic")
+                    proxy.validation_summary = capability
                     if ok:
                         proxy.alive_hits = (proxy.alive_hits or 0) + 1
                         proxy.last_alive = now

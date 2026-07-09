@@ -220,7 +220,11 @@ def run_monitor(args=None):
                 item = result_q.get(timeout=0.5)
                 if item is None:
                     break
-                pid, proto, host, port, successes, speeds = item
+                if len(item) >= 7:
+                    pid, proto, host, port, successes, speeds, capability = item
+                else:
+                    pid, proto, host, port, successes, speeds = item
+                    capability = {}
             except queue.Empty:
                 continue
 
@@ -233,11 +237,22 @@ def run_monitor(args=None):
                 
                 proxy.last_checked = now
                 current_status = proxy.status or 'untested'
+
+                proxy.web_http_ok = bool(capability.get("web_http_ok"))
+                proxy.web_https_ok = bool(capability.get("web_https_ok"))
+                proxy.remote_dns_ok = bool(capability.get("remote_dns_ok"))
+                proxy.telegram_ok = bool(capability.get("telegram_ok"))
+                proxy.exit_ip = capability.get("exit_ip")
+                proxy.validation_profile = "telegram" if proxy.telegram_ok else ("web" if proxy.web_https_ok else "basic")
+                proxy.validation_summary = capability or None
+                if proxy.protocol == 'https' and capability.get('http_connect_fallback_ok') and not capability.get('proxy_tls_ok'):
+                    proxy.protocol = 'http'
+                    proto = 'http'
                 
                 if successes == pm_config.PROBES_PER_PROXY:
                     transition = '+2'
                     avg_speed = int(sum(speeds) / len(speeds)) if speeds else None
-                    log("[ALIVE] {} {}:{} | {}ms (ok {}/{})", proto, host, port, avg_speed, successes, pm_config.PROBES_PER_PROXY)
+                    log("[ALIVE] {} {}:{} | {}ms (ok {}/{}) exit={} dns={} tg={}", proto, host, port, avg_speed, successes, pm_config.PROBES_PER_PROXY, capability.get('exit_ip'), capability.get('remote_dns_ok'), capability.get('telegram_ok'))
                     proxy.alive_hits = (proxy.alive_hits or 0) + successes
                     proxy.last_alive = now
                     proxy.speed_ms = avg_speed
@@ -248,7 +263,7 @@ def run_monitor(args=None):
                 elif successes > 0:
                     transition = '+1-1'
                     avg_speed = int(sum(speeds) / len(speeds)) if speeds else None
-                    log("[FLAKY] {} {}:{} | (ok {}/{}) avg {}ms", proto, host, port, successes, pm_config.PROBES_PER_PROXY, avg_speed)
+                    log("[FLAKY] {} {}:{} | (ok {}/{}) avg {}ms exit={} dns={} tg={}", proto, host, port, successes, pm_config.PROBES_PER_PROXY, avg_speed, capability.get('exit_ip'), capability.get('remote_dns_ok'), capability.get('telegram_ok'))
                     proxy.alive_hits = (proxy.alive_hits or 0) + successes
                     proxy.fail_hits = (proxy.fail_hits or 0) + (pm_config.PROBES_PER_PROXY - successes)
                     proxy.last_alive = now
@@ -288,7 +303,7 @@ def run_monitor(args=None):
                     proxy.previous_cost
                 )
 
-                if new_status == 'alive':
+                if new_status == 'alive' and (not args or getattr(args, 'geo', 'true') == 'true'):
                     if geo_expired(proxy.last_geo):
                         ip = proxy.resolved_ip or resolve_host(host)
                         if ip:

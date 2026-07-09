@@ -63,6 +63,13 @@ class ProxyStore:
                 if cf < min_c or cf > max_c:
                     continue
 
+            if getattr(self.args, "require_web_https", False) and not r.get("web_https_ok"):
+                continue
+            if getattr(self.args, "require_remote_dns", False) and not r.get("remote_dns_ok"):
+                continue
+            if getattr(self.args, "require_telegram", False) and not r.get("telegram_ok"):
+                continue
+
             if self.args.auth_required:
                 has_creds = bool(r.get("username"))
                 if self.args.auth_required == "auth" and not has_creds:

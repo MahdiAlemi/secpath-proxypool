@@ -1,7 +1,8 @@
-import subprocess
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy import or_, desc, asc
 from database import Proxy
+from proxy_monitor.utils.validation import validate_proxy
+from proxy_importer.utils.importer import normalize_proxy_line
 
 from dashboard.decorators import login_required, require_permission, get_user_proxy_filters, get_current_user
 from dashboard.utils.helpers import clamp_int
@@ -34,6 +35,7 @@ def api_proxies():
     country_filter = request.args.get("country", "")
     isp_filter = request.args.get("isp", "")
     adv_search_json = request.args.get("adv_search", "[]")
+    capability = request.args.get("capability", "")
 
     query = session.query(Proxy)
 
@@ -80,6 +82,15 @@ def api_proxies():
     
     if isp_filter:
         query = query.filter(Proxy.isp.like(f"%{isp_filter}%"))
+
+    if capability:
+        caps = {c.strip() for c in capability.split(',') if c.strip()}
+        if 'web_https' in caps:
+            query = query.filter(Proxy.web_https_ok == True)
+        if 'remote_dns' in caps:
+            query = query.filter(Proxy.remote_dns_ok == True)
+        if 'telegram' in caps:
+            query = query.filter(Proxy.telegram_ok == True)
 
     import json
     try:
@@ -164,24 +175,19 @@ def api_proxies_bulk():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        parts = line.replace("://", ":").split(":")
-        if len(parts) >= 3:
-            proto = parts[0] if len(parts[0]) <= 10 else "http"
-            ip = parts[1]
+        parsed = normalize_proxy_line(line, "http")
+        if parsed:
+            proto, ip, port, user, pwd = parsed
+            user = user or ""
+            pwd = pwd or ""
             try:
-                port = int(parts[2])
-                user = parts[3] if len(parts) > 3 else ""
-                pwd = parts[4] if len(parts) > 4 else ""
-                try:
-                    existing = session.query(Proxy).filter_by(
-                        protocol=proto, ip=ip, port=port, username=user, password=pwd
-                    ).first()
-                    if not existing:
-                        proxy = Proxy(protocol=proto, ip=ip, port=port, username=user, password=pwd, cost=1.0)
-                        session.add(proxy)
-                        added += 1
-                except:
-                    pass
+                existing = session.query(Proxy).filter_by(
+                    protocol=proto, ip=ip, port=port, username=user, password=pwd
+                ).first()
+                if not existing:
+                    proxy = Proxy(protocol=proto, ip=ip, port=port, username=user, password=pwd, cost=1.0)
+                    session.add(proxy)
+                    added += 1
             except:
                 pass
     session.commit()
@@ -234,28 +240,25 @@ def api_proxies_test(proxy_id):
     if not proxy:
         return jsonify({"success": False, "error": "Proxy not found"})
 
-    proto = proxy.protocol
-    host = proxy.ip
-    port = proxy.port
-    user = str(proxy.username) if proxy.username is not None else ""
-    pwd = str(proxy.password) if proxy.password is not None else ""
-
-    proxy_url = f"{proto}://{host}:{port}"
-    if user and pwd:
-        proxy_url = f"{proto}://{user}:{pwd}@{host}:{port}"
-
-    proto_str = str(proto)
-    extra = ["--proxy-insecure"] if proto_str == "https" else []
-
     try:
-        args = ["curl", "-x", proxy_url, "https://ident.me", "--max-time", "5", "-s", "-k"] + extra
-        result = subprocess.run(args, capture_output=True, timeout=10)
-        stdout = result.stdout
-        if result.returncode == 0 and stdout and stdout.strip():
-            return jsonify({"success": True, "result": "alive", "response": stdout.decode().strip()[:100]})
+        summary = validate_proxy(proxy.to_dict(), timeout=5, telegram=True)
+        proxy.web_http_ok = bool(summary.get("web_http_ok"))
+        proxy.web_https_ok = bool(summary.get("web_https_ok"))
+        proxy.remote_dns_ok = bool(summary.get("remote_dns_ok"))
+        proxy.telegram_ok = bool(summary.get("telegram_ok"))
+        proxy.exit_ip = summary.get("exit_ip")
+        proxy.validation_profile = "telegram" if proxy.telegram_ok else ("web" if proxy.web_https_ok else "basic")
+        proxy.validation_summary = summary
+        session.commit()
+        return jsonify({
+            "success": True,
+            "result": "alive" if summary.get("ok") else "dead",
+            "response": summary.get("exit_ip") or "",
+            "validation": summary
+        })
     except Exception as e:
-        pass
-    return jsonify({"success": True, "result": "dead", "response": ""})
+        session.rollback()
+        return jsonify({"success": False, "result": "dead", "error": str(e)})
 
 
 @proxies_bp.route("/api/proxies/delete", methods=["POST"])

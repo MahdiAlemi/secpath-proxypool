@@ -1,7 +1,7 @@
 import os
 from flask import Flask, g, render_template, redirect, url_for, session, flash, request
 
-from database import db
+from database import db, ensure_db_schema
 from dashboard.decorators import login_required
 
 
@@ -12,6 +12,7 @@ def create_app():
     app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.environ.get("SECRET_KEY", os.urandom(32).hex()))
     
     from dashboard.config import DB_PATH
+    ensure_db_schema()
     
     def get_db():
         """Get database session from Flask g object"""

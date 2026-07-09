@@ -109,7 +109,7 @@ def normalize_proxy_line(line, default_protocol):
         port = parsed.port
         if not ip or not port:
             return None
-        return protocol, ip, port, None, None
+        return protocol, ip, port, parsed.username, parsed.password
     
     parts = line.split(":")
     
