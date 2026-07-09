@@ -219,6 +219,8 @@ def api_server_start():
         args_list.extend(["--sticky_upstream", data["sticky_upstream"]])
     if data.get("upstream_protocol"):
         args_list.extend(["--upstream_protocol", data["upstream_protocol"]])
+    if data.get("candidate_statuses"):
+        args_list.extend(["--candidate_statuses", data["candidate_statuses"]])
 
     if data.get("countryCodes"):
         args_list.extend(["--countryCodes", data["countryCodes"]])

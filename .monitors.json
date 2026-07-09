@@ -1,1 +1,102 @@
-{}
+{
+  "monitor_quick-test": {
+    "name": "Quick Test",
+    "safe_name": "quick-test",
+    "pid": null,
+    "config": {
+      "name": "Quick Test",
+      "protocol": "",
+      "status": "untested",
+      "check_urls": "",
+      "threads": 50,
+      "timeout": 5,
+      "probes": 2,
+      "run_mode": "once",
+      "interval": 60,
+      "schedule_time": "",
+      "schedule_days": "daily",
+      "custom_every": 24,
+      "geo": "true",
+      "create_service": "no"
+    },
+    "proxy_count": 6019,
+    "start_time": "2026-07-09T13:30:45.391846+00:00",
+    "end_time": null,
+    "service": null
+  },
+  "monitor_promote-flaky": {
+    "name": "Promote Flaky",
+    "safe_name": "promote-flaky",
+    "pid": null,
+    "config": {
+      "name": "Promote Flaky",
+      "protocol": "",
+      "status": "flaky",
+      "check_urls": "",
+      "threads": 50,
+      "timeout": 5,
+      "probes": 2,
+      "run_mode": "once",
+      "interval": 60,
+      "schedule_time": "",
+      "schedule_days": "daily",
+      "custom_every": 24,
+      "geo": "true",
+      "create_service": "no"
+    },
+    "proxy_count": 254,
+    "start_time": "2026-07-09T13:53:10.392333+00:00",
+    "end_time": "2026-07-09T13:55:19.458898+00:00",
+    "service": null
+  },
+  "monitor_fresh-untested-check": {
+    "name": "Fresh Untested Check",
+    "safe_name": "fresh-untested-check",
+    "pid": null,
+    "config": {
+      "name": "Fresh Untested Check",
+      "protocol": "",
+      "status": "revived,untested",
+      "check_urls": "",
+      "threads": 50,
+      "timeout": 5,
+      "probes": 2,
+      "run_mode": "once",
+      "interval": 60,
+      "schedule_time": "",
+      "schedule_days": "daily",
+      "custom_every": 24,
+      "geo": "true",
+      "create_service": "no"
+    },
+    "proxy_count": 6141,
+    "start_time": "2026-07-09T14:05:58.325452+00:00",
+    "end_time": "2026-07-09T14:06:24.629664+00:00",
+    "service": null
+  },
+  "monitor_fresh-untested-check-1": {
+    "name": "Fresh Untested Check 1",
+    "safe_name": "fresh-untested-check-1",
+    "pid": null,
+    "config": {
+      "name": "Fresh Untested Check 1",
+      "protocol": "",
+      "status": "untested",
+      "check_urls": "",
+      "threads": 50,
+      "timeout": 5,
+      "probes": 2,
+      "run_mode": "once",
+      "interval": 60,
+      "schedule_time": "",
+      "schedule_days": "daily",
+      "custom_every": 24,
+      "geo": "true",
+      "create_service": "no"
+    },
+    "proxy_count": 552,
+    "start_time": "2026-07-09T14:06:39.619567+00:00",
+    "end_time": "2026-07-09T14:07:25.787146+00:00",
+    "service": null
+  }
+}

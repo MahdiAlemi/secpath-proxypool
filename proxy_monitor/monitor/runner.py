@@ -23,19 +23,41 @@ from proxy_monitor.workers import worker, result_q
 
 
 STATE_TRANSITIONS = {
-    'untested':    {'+2': 'flaky',   '+1-1': 'soft',   '-2': 'revived'},
-    'alive':      {'+2': 'alive',   '+1-1': 'soft',   '-2': 'cooling'},
-    'soft':       {'+2': 'flaky',   '+1-1': 'soft',   '-2': 'dead'},
-    'cooling':    {'+2': 'flaky',   '+1-1': 'soft',   '-2': 'dead'},
-    'dead':       {'+2': 'revived', '+1-1': 'semi-revived', '-2': 'dead'},
-    'revived':    {'+2': 'flaky',   '+1-1': 'soft',   '-2': 'dead'},
-    'flaky':      {'+2': 'alive',   '+1-1': 'soft',   '-2': 'dead'},
+    # First scan should classify proxies directly. Previously untested +2 became
+    # flaky and untested -2 became revived, which inverted the intended meaning.
+    'untested':    {'+2': 'alive',   '+1-1': 'soft',   '-2': 'dead'},
+    'alive':       {'+2': 'alive',   '+1-1': 'soft',   '-2': 'cooling'},
+    'soft':        {'+2': 'alive',   '+1-1': 'soft',   '-2': 'dead'},
+    'cooling':     {'+2': 'alive',   '+1-1': 'soft',   '-2': 'dead'},
+    'dead':        {'+2': 'revived', '+1-1': 'semi-revived', '-2': 'dead'},
+    'revived':     {'+2': 'alive',   '+1-1': 'soft',   '-2': 'dead'},
+    'flaky':       {'+2': 'alive',   '+1-1': 'soft',   '-2': 'dead'},
     'semi-revived':{'+2': 'revived', '+1-1': 'semi-revived', '-2': 'dead'},
 }
 
 
 def apply_transition(current_status, transition):
     return STATE_TRANSITIONS.get(current_status, {}).get(transition, current_status)
+
+
+def mark_monitor_config_done(root_dir: str, monitor_id: str):
+    """Best-effort cleanup so completed one-shot monitors leave Running state in UI."""
+    if not monitor_id:
+        return
+    try:
+        from datetime import datetime, timezone
+        cfg_path = os.path.join(root_dir, '.monitors.json')
+        if not os.path.exists(cfg_path):
+            return
+        with open(cfg_path, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+        if monitor_id in cfg:
+            cfg[monitor_id]['pid'] = None
+            cfg[monitor_id]['end_time'] = datetime.now(timezone.utc).isoformat()
+            with open(cfg_path, 'w', encoding='utf-8') as f:
+                json.dump(cfg, f, indent=2)
+    except Exception as e:
+        log('[!] Failed to mark monitor config completed for {}: {}', monitor_id, e)
 
 
 def run_monitor(args=None):
@@ -109,6 +131,9 @@ def run_monitor(args=None):
 
         if not proxies:
             log("[!] No proxies to test (all already tested in this session)")
+            if monitor_id:
+                mark_monitor_config_done(root_dir, monitor_id)
+                write_progress(root_dir, monitor_id, {"completed": True, "total": 0, "tested": 0, "percent": 100})
             return
 
         status_str = args.status if args and args.status else "all"
@@ -380,5 +405,6 @@ def run_monitor(args=None):
             "semi_revived": status_counts.get('semi-revived', 0),
             "untested": status_counts.get('untested', 0)
         })
+        mark_monitor_config_done(root_dir, monitor_id)
 
     log("[+] Monitor finished cleanly")

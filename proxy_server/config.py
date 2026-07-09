@@ -41,6 +41,7 @@ def parse_args():
     parser.add_argument("--insecure_upstream", action="store_true", help="Allow insecure upstream")
     parser.add_argument("--sticky_upstream", help="Sticky upstream proxy")
     parser.add_argument("--upstream_protocol", help="Upstream protocol")
+    parser.add_argument("--candidate_statuses", default="alive", help="Candidate proxy statuses (comma-separated). Default: alive")
     parser.add_argument("--countryCodes", help="Filter by country codes (comma-separated)")
     parser.add_argument("--regions", help="Filter by regions (comma-separated)")
     parser.add_argument("--cities", help="Filter by cities (comma-separated)")

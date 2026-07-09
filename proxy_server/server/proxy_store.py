@@ -19,10 +19,14 @@ class ProxyStore:
         self._load_interval = 30.0
 
     def _load_candidates_from_db(self):
+        statuses_arg = getattr(self.args, "candidate_statuses", "alive") or "alive"
+        statuses = [s.strip() for s in statuses_arg.split(",") if s.strip()]
+        if not statuses:
+            statuses = ["alive"]
         with get_db_session() as session:
             proxies = session.query(Proxy).filter(
                 Proxy.protocol.in_(['http', 'https', 'socks4', 'socks5']),
-                Proxy.status == 'alive'
+                Proxy.status.in_(statuses)
             ).all()
             return [p.to_dict() for p in proxies]
 
