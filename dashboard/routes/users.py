@@ -2,6 +2,7 @@ import re
 
 import bcrypt
 from flask import Blueprint, jsonify, request, session as flask_session
+from sqlalchemy import func
 
 from dashboard.config import ALL_PERMISSIONS, ROLE_PERMISSIONS
 from dashboard.security import api_error
@@ -66,6 +67,27 @@ def _json_object():
     data = request.get_json(silent=True)
     return data if isinstance(data, dict) else None
 
+
+
+def _serialize_user(user, token_count=0):
+    payload = user.to_dict()
+    payload["effective_permissions"] = sorted(get_user_permissions(user))
+    payload["token_count"] = int(token_count or 0)
+    filters = (user.custom_permissions or {}).get("proxy_filters", {})
+    payload["proxy_scope"] = {
+        "statuses": list(filters.get("statuses") or []),
+        "protocols": list(filters.get("protocols") or []),
+    }
+    payload["is_current"] = user.id == flask_session.get("user_id")
+    return payload
+
+
+def _active_privileged_count(db_session):
+    return (
+        db_session.query(User)
+        .filter(User.is_active.is_(True), User.role.in_(["admin", "superadmin"]))
+        .count()
+    )
 
 def get_user_from_session():
     """Return the active user represented by the current browser session."""
@@ -138,7 +160,24 @@ def api_current_user():
 def api_users_list():
     with db.session() as db_session:
         users = db_session.query(User).order_by(User.username.asc()).all()
-        return jsonify([user.to_dict() for user in users])
+        token_counts = dict(
+            db_session.query(Token.user_id, func.count(Token.id))
+            .group_by(Token.user_id)
+            .all()
+        )
+        return jsonify([_serialize_user(user, token_counts.get(user.id, 0)) for user in users])
+
+
+@users_bp.route("/api/users/<int:user_id>", methods=["GET"])
+@login_required
+@require_permission("users.manage")
+def api_user_detail(user_id):
+    with db.session() as db_session:
+        user = db_session.query(User).filter_by(id=user_id).first()
+        if not user:
+            return api_error("User not found", 404, "not_found")
+        token_count = db_session.query(Token).filter_by(user_id=user_id).count()
+        return jsonify(_serialize_user(user, token_count))
 
 
 @users_bp.route("/api/users", methods=["POST"])
@@ -192,6 +231,10 @@ def api_users_update(user_id):
     data = _json_object()
     if data is None:
         return api_error("A JSON object is required", 400, "invalid_json")
+    if "username" in data:
+        username = str(data.get("username", "")).strip()
+        if not _USERNAME_RE.fullmatch(username):
+            return api_error("Username must be 3-50 characters using letters, numbers, dot, dash, or underscore", 400, "invalid_username")
     if "role" in data and data["role"] not in ROLE_PERMISSIONS:
         return api_error("Invalid role", 400, "invalid_role")
     if "is_active" in data and not isinstance(data["is_active"], bool):
@@ -211,11 +254,24 @@ def api_users_update(user_id):
         if not user:
             return api_error("User not found", 404, "not_found")
         requested_role = data.get("role", user.role)
+        requested_active = data.get("is_active", user.is_active)
         if (_privileged_role(user.role) or _privileged_role(requested_role)) and (not actor or not _privileged_role(actor["role"])):
             return api_error("Only an administrator can modify privileged users", 403, "permission_denied")
-        if user_id == flask_session.get("user_id") and data.get("is_active") is False:
+        if user_id == flask_session.get("user_id") and requested_active is False:
             return api_error("Cannot deactivate yourself", 400, "self_lockout")
+        if user_id == flask_session.get("user_id") and not _privileged_role(requested_role):
+            return api_error("Cannot remove your own administrative role", 400, "self_lockout")
+        if _privileged_role(user.role) and (not requested_active or not _privileged_role(requested_role)):
+            if _active_privileged_count(db_session) <= 1:
+                return api_error("At least one active administrator must remain", 409, "last_administrator")
 
+        if "username" in data:
+            duplicate = db_session.query(User).filter(User.username == username, User.id != user_id).first()
+            if duplicate:
+                return api_error("Username already exists", 409, "duplicate_user")
+            user.username = username
+            if user_id == flask_session.get("user_id"):
+                flask_session["user"] = username
         if data.get("password"):
             user.password_hash = bcrypt.hashpw(str(data["password"]).encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
             db_session.query(Token).filter_by(user_id=user_id).delete()
@@ -228,7 +284,7 @@ def api_users_update(user_id):
             if not user.is_active:
                 db_session.query(Token).filter_by(user_id=user_id).delete()
         db_session.commit()
-        return jsonify({"success": True})
+        return jsonify({"success": True, "user": _serialize_user(user, db_session.query(Token).filter_by(user_id=user_id).count())})
 
 
 @users_bp.route("/api/users/<int:user_id>", methods=["DELETE"])
@@ -245,6 +301,8 @@ def api_users_delete(user_id):
             return api_error("User not found", 404, "not_found")
         if _privileged_role(user.role) and (not actor or not _privileged_role(actor["role"])):
             return api_error("Only an administrator can delete privileged users", 403, "permission_denied")
+        if _privileged_role(user.role) and user.is_active and _active_privileged_count(db_session) <= 1:
+            return api_error("At least one active administrator must remain", 409, "last_administrator")
         db_session.query(Token).filter_by(user_id=user_id).delete()
         db_session.delete(user)
         db_session.commit()

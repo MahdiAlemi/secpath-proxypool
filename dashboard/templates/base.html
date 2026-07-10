@@ -25,6 +25,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/sources.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/validation.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/serving.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/insights.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/operations.css') }}">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -34,6 +36,9 @@
   <script src="{{ url_for('static', filename='js/sources.js') }}"></script>
   <script src="{{ url_for('static', filename='js/validation.js') }}"></script>
   <script src="{{ url_for('static', filename='js/serving.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/insights.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/operations.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/access.js') }}"></script>
   <script src="{{ url_for('static', filename='js/shell.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>

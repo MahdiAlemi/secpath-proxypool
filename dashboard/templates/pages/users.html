@@ -1,0 +1,39 @@
+<div id="tab-users" class="tab-content {{ 'hidden' if tab!='users' else '' }}">
+  <section class="access-hero">
+    <div>
+      <span class="page-eyebrow">Administration</span>
+      <h2>Access control</h2>
+      <p>Manage database users, role defaults, permission overrides, proxy scope, and active API sessions.</p>
+    </div>
+    <div class="access-hero-actions"><span id="access-updated" class="workspace-updated">Not loaded yet</span><button class="btn" type="button" onclick="window.AccessWorkspace.refresh()">Refresh users</button></div>
+  </section>
+
+  <section class="access-summary-grid">
+    <article><span>Total users</span><strong id="access-total">—</strong></article>
+    <article><span>Active users</span><strong id="access-active">—</strong></article>
+    <article><span>Administrators</span><strong id="access-admins">—</strong></article>
+    <article><span>API sessions</span><strong id="access-tokens">—</strong></article>
+  </section>
+
+  <section class="access-workspace">
+    <article class="workspace-card access-list-card">
+      <header class="workspace-card-header access-list-header">
+        <div><span class="page-eyebrow">Directory</span><h3>Users</h3></div>
+        <div class="access-list-tools"><input id="access-search" class="form-input" type="search" placeholder="Search users" aria-label="Search users"><select id="access-role-filter" class="form-input" aria-label="Filter by role"><option value="all">All roles</option><option value="admin">Admin</option><option value="superadmin">Superadmin</option><option value="user">User</option></select></div>
+      </header>
+      <div id="access-user-list" class="access-user-list"></div>
+      <div id="access-empty" class="workspace-empty" hidden>No users match this filter.</div>
+    </article>
+
+    <aside class="workspace-card access-detail-card" id="access-detail-card">
+      <div id="access-detail-empty" class="access-detail-empty"><span aria-hidden="true">◎</span><strong>Select a user</strong><p>Review role, effective permissions, proxy scope, and session state.</p></div>
+      <div id="access-detail" hidden>
+        <header class="access-detail-header"><div class="access-avatar" id="access-detail-avatar">A</div><div><span id="access-detail-role" class="status-pill">—</span><h3 id="access-detail-name">—</h3><p id="access-detail-meta">—</p></div></header>
+        <div class="access-detail-actions"><button class="btn btn-primary" type="button" onclick="window.AccessWorkspace.editSelected()">Edit user</button><button class="btn btn-danger" id="access-delete-button" type="button" onclick="window.AccessWorkspace.deleteSelected()">Delete</button></div>
+        <section class="access-detail-section"><div><strong>Effective permissions</strong><span id="access-permission-count">0</span></div><div id="access-permissions" class="access-chip-list"></div></section>
+        <section class="access-detail-section"><div><strong>Proxy scope</strong></div><div id="access-scope" class="access-scope-grid"></div></section>
+        <section class="access-detail-section"><div><strong>Account activity</strong></div><dl class="access-detail-dl"><div><dt>Status</dt><dd id="access-detail-status">—</dd></div><div><dt>Created</dt><dd id="access-detail-created">—</dd></div><div><dt>Last login</dt><dd id="access-detail-login">—</dd></div><div><dt>API sessions</dt><dd id="access-detail-tokens">—</dd></div></dl></section>
+      </div>
+    </aside>
+  </section>
+</div>

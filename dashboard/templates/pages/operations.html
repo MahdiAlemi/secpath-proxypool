@@ -1,0 +1,68 @@
+<div id="tab-operations" class="tab-content {{ 'hidden' if tab!='operations' else '' }}">
+  <section class="operations-hero">
+    <div>
+      <span class="page-eyebrow">Administration</span>
+      <h2>Operations and maintenance</h2>
+      <p>Review runtime health, security posture, backups, and destructive maintenance from one controlled workspace.</p>
+    </div>
+    <div class="operations-hero-actions">
+      <span id="operations-updated" class="workspace-updated">Not loaded yet</span>
+      <button class="btn" type="button" onclick="window.OperationsWorkspace.refresh()">Refresh preflight</button>
+    </div>
+  </section>
+
+  <section class="operations-summary-grid">
+    <article class="operations-summary-card"><span>Database</span><strong id="operations-db-state">—</strong><small id="operations-db-detail">Waiting</small></article>
+    <article class="operations-summary-card"><span>Security</span><strong id="operations-security-state">—</strong><small id="operations-security-detail">Waiting</small></article>
+    <article class="operations-summary-card"><span>Runtime</span><strong id="operations-runtime-state">—</strong><small id="operations-runtime-detail">Waiting</small></article>
+    <article class="operations-summary-card"><span>Backups</span><strong id="operations-backup-state">—</strong><small id="operations-backup-detail">Waiting</small></article>
+  </section>
+
+  <section class="operations-main-grid">
+    <article class="workspace-card operations-preflight-card">
+      <header class="workspace-card-header"><div><span class="page-eyebrow">Preflight</span><h3>Recommended next actions</h3></div><span id="operations-preflight-status" class="status-pill">Waiting</span></header>
+      <div id="operations-recommendations" class="operations-recommendations"></div>
+      <div id="operations-runtime-metrics" class="operations-metric-grid"></div>
+    </article>
+
+    <article class="workspace-card operations-security-card">
+      <header class="workspace-card-header"><div><span class="page-eyebrow">Security posture</span><h3>Session and credential configuration</h3></div></header>
+      <div id="operations-security-checks" class="operations-check-list"></div>
+      <form class="operations-inline-form" data-permissions="settings.edit" onsubmit="window.OperationsWorkspace.changePassword(event)">
+        <label for="operations-new-password">Change your password</label>
+        <div><input id="operations-new-password" class="form-input" type="password" minlength="12" placeholder="At least 12 characters" autocomplete="new-password"><button class="btn btn-primary" type="submit">Update password</button></div>
+      </form>
+    </article>
+  </section>
+
+  <section class="operations-split-grid">
+    <article class="workspace-card">
+      <header class="workspace-card-header"><div><span class="page-eyebrow">Database protection</span><h3>Backups</h3></div><button class="btn btn-primary" type="button" data-permissions="settings.edit" onclick="window.OperationsWorkspace.createBackup()">Create backup</button></header>
+      <div id="operations-backup-list" class="operations-backup-list"></div>
+      <div class="operations-restore-box">
+        <div><strong>Restore database</strong><span>SQLite accepts a complete <code>.sqlite</code> backup in replace mode.</span></div>
+        <input data-permissions="settings.edit,proxies.credentials" id="operations-restore-file" type="file" accept=".sqlite,.sql" class="form-input">
+        <select data-permissions="settings.edit,proxies.credentials" id="operations-restore-mode" class="form-input"><option value="replace">Replace database</option><option value="append">Append (MySQL only)</option></select>
+        <button class="btn" data-permissions="settings.edit,proxies.credentials" type="button" onclick="window.OperationsWorkspace.restoreDatabase()">Validate and restore</button>
+      </div>
+    </article>
+
+    <article class="workspace-card">
+      <header class="workspace-card-header"><div><span class="page-eyebrow">Safe maintenance</span><h3>Runtime housekeeping</h3></div></header>
+      <div class="operations-action-list">
+        <div><div><strong>Clear root log files</strong><span>Removes dashboard, monitor, and server logs only.</span></div><button class="btn" data-permissions="settings.edit" type="button" onclick="window.OperationsWorkspace.cleanupLogs()">Clear logs</button></div>
+        <div><div><strong>Clear stale runtime state</strong><span>Blocked while an owned monitor or server process is active.</span></div><button class="btn" data-permissions="settings.edit" type="button" onclick="window.OperationsWorkspace.cleanupRuntime()">Clear runtime</button></div>
+        <div><div><strong>Normalize legacy statuses</strong><span>Moves old revived records to dead or soft before re-validation.</span></div><button class="btn" data-permissions="settings.edit" type="button" onclick="window.OperationsWorkspace.normalizeStatuses()">Normalize</button></div>
+      </div>
+    </article>
+  </section>
+
+  <section class="workspace-card operations-danger-zone">
+    <header class="workspace-card-header"><div><span class="page-eyebrow">Danger zone</span><h3>Delete inventory records</h3><p>Use Inventory selection for precise deletion. These actions remove entire status or protocol groups.</p></div></header>
+    <div class="operations-danger-controls">
+      <select data-permissions="proxies.delete" id="operations-delete-protocol" class="form-input"><option value="all">All protocols</option><option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks4">SOCKS4</option><option value="socks5">SOCKS5</option></select>
+      <select data-permissions="proxies.delete" id="operations-delete-status" class="form-input"><option value="all">All statuses</option><option value="alive">Alive</option><option value="flaky">Flaky</option><option value="cooling">Cooling</option><option value="soft">Soft</option><option value="revived">Revived</option><option value="semi-revived">Semi-revived</option><option value="dead">Dead</option><option value="untested">Untested</option></select>
+      <button class="btn btn-danger" data-permissions="proxies.delete" type="button" onclick="window.OperationsWorkspace.deleteGroup()">Delete matching proxies</button>
+    </div>
+  </section>
+</div>

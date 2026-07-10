@@ -393,3 +393,41 @@ bash scripts/run_dashboard.sh
 ```
 
 Open `http://127.0.0.1:5003/index?tab=server`. Check profile search and filtering, endpoint copy, preflight refresh, runtime logs, Start/Stop, the four editor presets, protected network-listener warnings, dark mode, and a narrow viewport. Do not expose a listener publicly during visual review. Applying the overlay does not start, restart, or deploy any service.
+
+## Phase 9 Insights, Operations, and Access verification
+
+After applying the Phase 9 overlay, run:
+
+```bash
+bash scripts/health_check.sh
+bash scripts/repo_hygiene_check.sh
+python3 -m compileall -q dashboard tests
+node --check dashboard/static/js/base.js
+node --check dashboard/static/js/insights.js
+node --check dashboard/static/js/operations.js
+node --check dashboard/static/js/access.js
+node --check dashboard/static/js/shell.js
+python3 -m unittest -v tests.test_insights_operations
+git diff --check
+git status --short
+```
+
+The dedicated tests use a disposable SQLite database. They verify decision-oriented statistics, redacted diagnostics, backup-name validation, runtime cleanup guards, orphan process detection, enriched user scope/session data, and final-administrator protection.
+
+### Local visual review
+
+Start the development dashboard only for local review:
+
+```bash
+bash scripts/run_dashboard.sh
+```
+
+Review these pages after signing in:
+
+```text
+http://127.0.0.1:5003/index?tab=stats
+http://127.0.0.1:5003/index?tab=operations
+http://127.0.0.1:5003/index?tab=users
+```
+
+Check light/dark mode, narrow-window layout, permission-gated Operations controls, backup listing, user editing, proxy-scope display, and the final-administrator safeguards. Do not restore a backup or run destructive maintenance solely for visual testing.

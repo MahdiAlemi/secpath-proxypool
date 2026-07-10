@@ -1,9 +1,11 @@
+import json
 import os
 import subprocess
 import tempfile
 import shutil
 import glob
 import sqlite3
+import time
 from datetime import datetime
 from flask import Blueprint, current_app, request, jsonify, send_file, g, session as flask_session
 
@@ -51,6 +53,105 @@ def _validate_sqlite_backup(path):
         connection.close()
 
 
+def _read_json_object(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return payload if isinstance(payload, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def _recent_start_reservation(payload, ttl=30.0):
+    if payload.get("state") != "starting":
+        return False
+    try:
+        return time.time() - float(payload.get("reserved_at_epoch", 0)) < float(ttl)
+    except (TypeError, ValueError):
+        return False
+
+
+def _inspect_runtime_processes():
+    """Inspect owned runtime processes without creating runtime directories."""
+    from dashboard.config import load_monitors_config, load_servers_config
+    from proxy_monitor.lifecycle import process_matches as monitor_process_matches
+    from proxy_monitor.lifecycle import validate_monitor_id
+    from proxy_server.lifecycle import process_matches as server_process_matches
+    from proxy_server.lifecycle import validate_server_id
+
+    active_monitors = []
+    active_servers = []
+    invalid_monitors = []
+    invalid_servers = []
+
+    monitor_registry = load_monitors_config()
+    monitor_records = monitor_registry if isinstance(monitor_registry, dict) else {}
+    monitor_ids = {str(item) for item in monitor_records}
+    monitor_runtime = os.path.join(BASE_DIR, ".runtime", "monitors")
+    for path in glob.glob(os.path.join(monitor_runtime, "*.claim.json")):
+        name = os.path.basename(path)
+        monitor_ids.add(name[: -len(".claim.json")])
+
+    for raw_id in sorted(monitor_ids):
+        try:
+            monitor_id = validate_monitor_id(raw_id)
+        except (TypeError, ValueError):
+            invalid_monitors.append(raw_id)
+            continue
+        record = monitor_records.get(raw_id, monitor_records.get(monitor_id, {}))
+        if not isinstance(record, dict):
+            invalid_monitors.append(monitor_id)
+            continue
+        running = monitor_process_matches(
+            record.get("pid"),
+            monitor_id,
+            expected_create_time=record.get("process_create_time"),
+        )
+        claim = _read_json_object(os.path.join(monitor_runtime, f"{monitor_id}.claim.json"))
+        if not running and claim:
+            running = monitor_process_matches(
+                claim.get("pid"),
+                monitor_id,
+                expected_create_time=claim.get("process_create_time"),
+            )
+        if running or _recent_start_reservation(claim):
+            active_monitors.append(monitor_id)
+
+    server_registry = load_servers_config()
+    server_records = server_registry if isinstance(server_registry, dict) else {}
+    server_ids = {str(item) for item in server_records}
+    server_runtime = os.path.join(BASE_DIR, ".runtime", "servers")
+    for path in glob.glob(os.path.join(server_runtime, "*.json")):
+        name = os.path.basename(path)
+        if name.endswith(".profile.json"):
+            continue
+        server_ids.add(name[:-len(".json")])
+
+    for raw_id in sorted(server_ids):
+        try:
+            server_id = validate_server_id(raw_id)
+        except (TypeError, ValueError):
+            invalid_servers.append(raw_id)
+            continue
+        state = _read_json_object(os.path.join(server_runtime, f"{server_id}.json"))
+        running = server_process_matches(
+            state.get("pid"),
+            server_id,
+            expected_create_time=state.get("process_create_time"),
+        )
+        if running or _recent_start_reservation(state):
+            active_servers.append(server_id)
+
+    return {
+        "monitors": active_monitors,
+        "servers": active_servers,
+        "invalid_monitors": invalid_monitors,
+        "invalid_servers": invalid_servers,
+        "monitor_profiles": len(monitor_records),
+        "server_profiles": len(server_records),
+    }
+
+
 @settings_bp.route("/api/settings", methods=["GET"])
 @login_required
 @require_permission("settings.view")
@@ -73,54 +174,77 @@ def api_settings():
 @login_required
 @require_permission("settings.view")
 def api_settings_diagnostics():
-    """Return an operator-friendly health snapshot for local preflight checks."""
+    """Return a bounded operational snapshot without exposing secrets."""
     from sqlalchemy import func, or_
     from config import config
-    from database import db, Proxy
+    from database import db, Proxy, Token, User
 
     db_type = config.DB_TYPE.lower()
     sqlite_path = config.SQLITE_DB_PATH
     sqlite_abs = sqlite_path if os.path.isabs(sqlite_path) else os.path.join(BASE_DIR, sqlite_path)
-
-    runtime_files = []
-    for name in [".monitors.json", ".servers.json", ".server_config.json", "dashboard/.monitors.json", "dashboard/.servers.json"]:
-        path = os.path.join(BASE_DIR, name)
-        runtime_files.append({"name": name, "exists": os.path.exists(path)})
+    runtime_processes = _inspect_runtime_processes()
 
     progress_dir = os.path.join(BASE_DIR, "progress")
     progress_count = len(glob.glob(os.path.join(progress_dir, "*.json"))) if os.path.isdir(progress_dir) else 0
+    runtime_dir = os.path.join(BASE_DIR, ".runtime")
+    runtime_file_count = 0
+    if os.path.isdir(runtime_dir):
+        runtime_file_count = sum(len(files) for _root, _dirs, files in os.walk(runtime_dir))
+
+    log_files = [path for path in glob.glob(os.path.join(BASE_DIR, "*.log")) if os.path.isfile(path)]
+    backup_files = sorted(
+        glob.glob(os.path.join(BASE_DIR, "proxies_backup_*.sql"))
+        + glob.glob(os.path.join(BASE_DIR, "proxies_backup_*.sqlite")),
+        reverse=True,
+    )
 
     recommendations = []
     with db.session() as session:
         total = session.query(func.count(Proxy.id)).scalar() or 0
-        alive = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive').scalar() or 0
-        soft = session.query(func.count(Proxy.id)).filter(Proxy.status == 'soft').scalar() or 0
-        dead = session.query(func.count(Proxy.id)).filter(Proxy.status == 'dead').scalar() or 0
-        revived = session.query(func.count(Proxy.id)).filter(Proxy.status == 'revived').scalar() or 0
-        untested = session.query(func.count(Proxy.id)).filter(or_(Proxy.status == 'untested', Proxy.status.is_(None))).scalar() or 0
-        web_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.web_https_ok.is_(True)).scalar() or 0
-        dns_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.remote_dns_ok.is_(True)).scalar() or 0
-        telegram_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.web_https_ok.is_(True), Proxy.telegram_ok.is_(True)).scalar() or 0
-        full_capability = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.web_https_ok.is_(True), Proxy.remote_dns_ok.is_(True), Proxy.telegram_ok.is_(True)).scalar() or 0
+        alive = session.query(func.count(Proxy.id)).filter(Proxy.status == "alive").scalar() or 0
+        soft = session.query(func.count(Proxy.id)).filter(Proxy.status == "soft").scalar() or 0
+        dead = session.query(func.count(Proxy.id)).filter(Proxy.status == "dead").scalar() or 0
+        revived = session.query(func.count(Proxy.id)).filter(Proxy.status == "revived").scalar() or 0
+        untested = session.query(func.count(Proxy.id)).filter(or_(Proxy.status == "untested", Proxy.status.is_(None))).scalar() or 0
+        web_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == "alive", Proxy.web_https_ok.is_(True)).scalar() or 0
+        dns_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == "alive", Proxy.remote_dns_ok.is_(True)).scalar() or 0
+        telegram_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == "alive", Proxy.web_https_ok.is_(True), Proxy.telegram_ok.is_(True)).scalar() or 0
+        full_capability = session.query(func.count(Proxy.id)).filter(Proxy.status == "alive", Proxy.web_https_ok.is_(True), Proxy.remote_dns_ok.is_(True), Proxy.telegram_ok.is_(True)).scalar() or 0
         legacy_revived = session.query(func.count(Proxy.id)).filter(
-            Proxy.status == 'revived',
+            Proxy.status == "revived",
             Proxy.web_https_ok.is_(False),
             Proxy.remote_dns_ok.is_(False),
             Proxy.telegram_ok.is_(False),
         ).scalar() or 0
+        user_count = session.query(func.count(User.id)).scalar() or 0
+        active_users = session.query(func.count(User.id)).filter(User.is_active.is_(True)).scalar() or 0
+        active_tokens = session.query(func.count(Token.id)).scalar() or 0
 
-    if db_type == 'sqlite' and not os.path.exists(sqlite_abs):
-        recommendations.append('SQLite database file is missing; run dev_setup or init_db before using the dashboard.')
+    secret_state = {
+        "flask_secret_configured": bool(os.environ.get("FLASK_SECRET_KEY") or os.environ.get("SECRET_KEY")),
+        "jwt_secret_configured": bool(os.environ.get("JWT_SECRET")),
+        "session_cookie_secure": bool(current_app.config.get("SESSION_COOKIE_SECURE")),
+        "legacy_admin_configured": bool(USERS),
+    }
+
+    if db_type == "sqlite" and not os.path.exists(sqlite_abs):
+        recommendations.append("SQLite database file is missing. Initialize the schema before normal use.")
+    if not secret_state["flask_secret_configured"] or not secret_state["jwt_secret_configured"]:
+        recommendations.append("Configure independent FLASK_SECRET_KEY and JWT_SECRET values in .env.")
+    if secret_state["legacy_admin_configured"]:
+        recommendations.append("A legacy environment-backed administrator is still enabled. Prefer a database administrator.")
     if legacy_revived > 0:
-        recommendations.append('Legacy revived rows still need cleanup: use Settings → Normalize Legacy Statuses, then run a monitor.')
+        recommendations.append("Normalize legacy revived rows, then run a validation profile.")
     if alive > 0 and web_ready < alive:
-        recommendations.append('Some alive proxies are not web-ready; use Web-ready filters/server preset for real browsing traffic.')
+        recommendations.append("Some alive proxies are not HTTPS-ready. Use capability filters for real client traffic.")
     if total > 0 and alive == 0:
-        recommendations.append('No alive proxies currently available; run a monitor after importing fresh sources.')
-    if progress_count > 20:
-        recommendations.append('Many progress files are present; use Clear Runtime Files when no monitors are running.')
+        recommendations.append("No alive proxies are available. Run validation after importing fresh sources.")
+    if progress_count > 20 or runtime_file_count > 100:
+        recommendations.append("Runtime state is accumulating. Stop active processes before using runtime cleanup.")
+    if not backup_files:
+        recommendations.append("No database backup is present. Create one before destructive maintenance.")
     if not recommendations:
-        recommendations.append('Preflight looks good. Continue using capability filters and run monitor refreshes regularly.')
+        recommendations.append("Operational preflight is healthy. Continue periodic validation and backups.")
 
     return jsonify({
         "success": True,
@@ -144,9 +268,28 @@ def api_settings_diagnostics():
             "legacy_revived": legacy_revived,
         },
         "runtime": {
-            "files": runtime_files,
+            "monitor_profiles": runtime_processes["monitor_profiles"],
+            "running_monitors": len(runtime_processes["monitors"]),
+            "server_profiles": runtime_processes["server_profiles"],
+            "running_servers": len(runtime_processes["servers"]),
+            "invalid_monitor_profiles": len(runtime_processes["invalid_monitors"]),
+            "invalid_server_profiles": len(runtime_processes["invalid_servers"]),
             "progress_files": progress_count,
+            "runtime_files": runtime_file_count,
+            "log_files": len(log_files),
+            "log_size_mb": round(sum(os.path.getsize(path) for path in log_files) / 1024 / 1024, 3),
         },
+        "backups": {
+            "count": len(backup_files),
+            "size_mb": round(sum(os.path.getsize(path) for path in backup_files) / 1024 / 1024, 3),
+            "latest": os.path.basename(backup_files[0]) if backup_files else None,
+        },
+        "access": {
+            "users": user_count,
+            "active_users": active_users,
+            "active_tokens": active_tokens,
+        },
+        "security": secret_state,
         "recommendations": recommendations,
     })
 
@@ -237,7 +380,7 @@ def api_settings_backup_download():
     backups = sorted(glob.glob(os.path.join(BASE_DIR, "proxies_backup_*.sql")) + glob.glob(os.path.join(BASE_DIR, "proxies_backup_*.sqlite")), reverse=True)
     if not backups:
         return api_error("No backups found", 404, "not_found")
-    
+
     latest = backups[0]
     return send_file(latest, as_attachment=True, download_name=os.path.basename(latest))
 
@@ -255,6 +398,19 @@ def api_settings_backups():
             "created": datetime.fromtimestamp(os.path.getctime(b)).strftime('%Y-%m-%d %H:%M:%S')
         })
     return jsonify({"backups": result})
+
+
+@settings_bp.route("/api/settings/backups/<path:name>", methods=["GET"])
+@login_required
+@require_permission("settings.edit", "proxies.credentials")
+def api_settings_backup_download_named(name):
+    safe_name = os.path.basename(str(name or ""))
+    if safe_name != name or not safe_name.startswith("proxies_backup_") or not safe_name.endswith((".sqlite", ".sql")):
+        return api_error("Invalid backup name", 400, "invalid_backup_name")
+    path = os.path.join(BASE_DIR, safe_name)
+    if not os.path.isfile(path):
+        return api_error("Backup not found", 404, "not_found")
+    return send_file(path, as_attachment=True, download_name=safe_name)
 
 
 @settings_bp.route("/api/settings/import", methods=["POST"])
@@ -391,23 +547,46 @@ def api_settings_cleanup_logs():
 @login_required
 @require_permission("settings.edit")
 def api_settings_cleanup_runtime():
-    """Clear stale runtime files without deleting the database."""
+    """Clear stale runtime state only when no owned process is active."""
+    runtime_processes = _inspect_runtime_processes()
+    invalid = {
+        "monitors": runtime_processes["invalid_monitors"],
+        "servers": runtime_processes["invalid_servers"],
+    }
+    if invalid["monitors"] or invalid["servers"]:
+        return jsonify({
+            "success": False,
+            "error": "Runtime registry contains invalid profile identifiers; repair it before cleanup",
+            "code": "runtime_registry_invalid",
+            "invalid": invalid,
+        }), 409
+    if runtime_processes["monitors"] or runtime_processes["servers"]:
+        return jsonify({
+            "success": False,
+            "error": "Stop active monitors and servers before clearing runtime state",
+            "code": "runtime_active",
+            "active": {
+                "monitors": runtime_processes["monitors"],
+                "servers": runtime_processes["servers"],
+            },
+        }), 409
+
     deleted = 0
-    for name in [".monitors.json", ".servers.json", ".monitor.pid", ".server.pid"]:
+    for name in [".monitor.pid", ".server.pid"]:
         path = os.path.join(BASE_DIR, name)
-        if os.path.exists(path):
+        if os.path.isfile(path):
             try:
                 os.remove(path)
                 deleted += 1
             except OSError:
                 pass
-    progress_dir = os.path.join(BASE_DIR, ".progress")
-    if os.path.isdir(progress_dir):
-        try:
-            shutil.rmtree(progress_dir)
-            deleted += 1
-        except OSError:
-            pass
+    for directory in [os.path.join(BASE_DIR, "progress"), os.path.join(BASE_DIR, ".runtime")]:
+        if os.path.isdir(directory):
+            try:
+                shutil.rmtree(directory)
+                deleted += 1
+            except OSError:
+                pass
     return jsonify({"success": True, "deleted": deleted})
 
 

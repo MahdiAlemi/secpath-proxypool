@@ -198,7 +198,7 @@ def create_app():
     @app.route("/index")
     @login_required
     def index():
-        allowed_tabs = {"cockpit", "proxies", "import", "monitor", "server", "stats"}
+        allowed_tabs = {"cockpit", "proxies", "import", "monitor", "server", "stats", "operations", "users"}
         requested_tab = request.args.get("tab", "cockpit")
         tab = requested_tab if requested_tab in allowed_tabs else "cockpit"
         current_username = session.get("user")

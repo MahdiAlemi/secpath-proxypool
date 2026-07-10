@@ -54,13 +54,21 @@ window.initialDashboardTab = {{ tab | tojson }};
           <span><strong>Insights</strong><small>Quality analytics</small></span>
         </button>
       </div>
+
+      <div class="nav-section">
+        <span class="nav-section-label">Administration</span>
+        <button class="nav-btn {{ 'active' if tab=='operations' else '' }}" data-tab="operations" onclick="showTab('operations', event)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm9 5-2.05.68a7.3 7.3 0 0 1-.58 1.4l.97 1.93-2.33 2.33-1.93-.97c-.45.24-.92.43-1.4.58L13 21h-2l-.68-2.05a7.3 7.3 0 0 1-1.4-.58l-1.93.97-2.33-2.33.97-1.93a7.3 7.3 0 0 1-.58-1.4L3 13v-2l2.05-.68c.15-.48.34-.95.58-1.4l-.97-1.93 2.33-2.33 1.93.97c.45-.24.92-.43 1.4-.58L11 3h2l.68 2.05c.48.15.95.34 1.4.58l1.93-.97 2.33 2.33-.97 1.93c.24.45.43.92.58 1.4L21 11v2Z"/></svg>
+          <span><strong>Operations</strong><small>Health and backups</small></span>
+        </button>
+        <button class="nav-btn {{ 'active' if tab=='users' else '' }}" data-tab="users" onclick="showTab('users', event)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0H5Zm14.5-9.5a3 3 0 1 0-2.42-4.77A6 6 0 0 1 18 9c0 .52-.07 1.02-.2 1.5h1.7ZM19 20h3a5 5 0 0 0-5.3-4.99A8.96 8.96 0 0 1 19 20Z"/></svg>
+          <span><strong>Access</strong><small>Users and permissions</small></span>
+        </button>
+      </div>
     </nav>
 
     <div class="sidebar-footer">
-      <div class="sidebar-admin-actions">
-        <button class="sidebar-utility" onclick="openModal('modal-users')"><span aria-hidden="true">◎</span> Users</button>
-        <button class="sidebar-utility" onclick="openModal('modal-settings')"><span aria-hidden="true">⚙</span> Operations</button>
-      </div>
       <div class="signed-in-user">
         <div class="user-avatar">{{ (user or 'A')[0] | upper }}</div>
         <div><strong>{{ user or 'Administrator' }}</strong><span>Signed in</span></div>
@@ -100,6 +108,8 @@ window.initialDashboardTab = {{ tab | tojson }};
       {% include "pages/monitor.html" %}
       {% include "pages/server.html" %}
       {% include "pages/stats.html" %}
+      {% include "pages/operations.html" %}
+      {% include "pages/users.html" %}
     </main>
   </section>
 </div>

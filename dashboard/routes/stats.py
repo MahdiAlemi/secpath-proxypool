@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from flask import Blueprint, g, jsonify
 from sqlalchemy import func, or_
 
@@ -19,6 +21,10 @@ def get_db():
 
 def _count(query):
     return query.with_entities(func.count(Proxy.id)).scalar() or 0
+
+
+def _percentage(value, total):
+    return round((value / total) * 100, 1) if total else 0.0
 
 
 @stats_bp.route("/api/stats", methods=["GET"])
@@ -57,7 +63,7 @@ def api_stats():
         .filter(Proxy.isp.isnot(None), Proxy.isp != "")
         .group_by(Proxy.isp)
         .order_by(func.count(Proxy.id).desc())
-        .limit(15)
+        .limit(10)
         .all()
     )
     by_isp = [{"isp": row[0], "count": row[1]} for row in by_isp_rows]
@@ -68,8 +74,11 @@ def api_stats():
     protocol_stats = {}
     for protocol in PROTOCOLS:
         protocol_query = base.filter(Proxy.protocol == protocol)
+        protocol_total = _count(protocol_query)
+        protocol_alive = _count(protocol_query.filter(Proxy.status == "alive"))
         protocol_stats[protocol] = {
-            "alive": _count(protocol_query.filter(Proxy.status == "alive")),
+            "total": protocol_total,
+            "alive": protocol_alive,
             "flaky": _count(protocol_query.filter(Proxy.status == "flaky")),
             "soft": _count(protocol_query.filter(Proxy.status == "soft")),
             "cooling": _count(protocol_query.filter(Proxy.status == "cooling")),
@@ -78,6 +87,7 @@ def api_stats():
             "revived": _count(protocol_query.filter(Proxy.status == "revived")),
             "semi-revived": _count(protocol_query.filter(Proxy.status == "semi-revived")),
             "last_check": protocol_query.with_entities(func.max(Proxy.last_checked)).scalar(),
+            "alive_rate": _percentage(protocol_alive, protocol_total),
         }
 
     web_ready = _count(base.filter(Proxy.status == "alive", Proxy.web_https_ok.is_(True)))
@@ -91,6 +101,38 @@ def api_stats():
             Proxy.telegram_ok.is_(True),
         )
     )
+
+    tested = max(0, total - status_counts["untested"])
+    unstable = sum(status_counts[key] for key in ("flaky", "soft", "cooling", "revived", "semi-revived"))
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    hour_ago = now - timedelta(hours=1)
+    day_ago = now - timedelta(days=1)
+    week_ago = now - timedelta(days=7)
+    freshness = {
+        "under_1h": _count(base.filter(Proxy.last_checked >= hour_ago)),
+        "one_to_24h": _count(base.filter(Proxy.last_checked < hour_ago, Proxy.last_checked >= day_ago)),
+        "one_to_7d": _count(base.filter(Proxy.last_checked < day_ago, Proxy.last_checked >= week_ago)),
+        "older_7d": _count(base.filter(Proxy.last_checked < week_ago)),
+        "never": _count(base.filter(Proxy.last_checked.is_(None))),
+    }
+
+    alive_base = base.filter(Proxy.status == "alive")
+    latency_bands = {
+        "fast": _count(alive_base.filter(Proxy.speed_ms.isnot(None), Proxy.speed_ms <= 300)),
+        "balanced": _count(alive_base.filter(Proxy.speed_ms > 300, Proxy.speed_ms <= 800)),
+        "slow": _count(alive_base.filter(Proxy.speed_ms > 800)),
+        "unknown": _count(alive_base.filter(Proxy.speed_ms.is_(None))),
+    }
+    reliability_bands = {
+        "high": _count(alive_base.filter(Proxy.reliability >= 0.9)),
+        "medium": _count(alive_base.filter(Proxy.reliability >= 0.6, Proxy.reliability < 0.9)),
+        "low": _count(alive_base.filter(Proxy.reliability.isnot(None), Proxy.reliability < 0.6)),
+        "unknown": _count(alive_base.filter(Proxy.reliability.is_(None))),
+    }
+
+    top_country_share = _percentage(by_country[0]["count"], total) if by_country else 0.0
+    top_isp_share = _percentage(by_isp[0]["count"], total) if by_isp else 0.0
 
     return jsonify(
         {
@@ -107,5 +149,26 @@ def api_stats():
             "dns_ready": dns_ready,
             "telegram_ready": telegram_ready,
             "full_capability": full_capability,
+            "quality": {
+                "tested": tested,
+                "stable": status_counts["alive"],
+                "unstable": unstable,
+                "unavailable": status_counts["dead"],
+                "pending": status_counts["untested"],
+                "success_rate": _percentage(status_counts["alive"], tested),
+                "web_rate": _percentage(web_ready, status_counts["alive"]),
+                "dns_rate": _percentage(dns_ready, status_counts["alive"]),
+                "telegram_rate": _percentage(telegram_ready, status_counts["alive"]),
+                "full_rate": _percentage(full_capability, status_counts["alive"]),
+            },
+            "freshness": freshness,
+            "latency_bands": latency_bands,
+            "reliability_bands": reliability_bands,
+            "concentration": {
+                "top_country_share": top_country_share,
+                "top_isp_share": top_isp_share,
+                "country_count": len(by_country),
+                "isp_count": len(by_isp),
+            },
         }
     )

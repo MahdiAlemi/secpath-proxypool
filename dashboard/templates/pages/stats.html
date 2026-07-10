@@ -1,108 +1,72 @@
-<!-- STATS TAB -->
-    <div id="tab-stats" class="tab-content {{ 'hidden' if tab!='stats' else '' }}">
-      <div class="card stats-insights-header">
-        <div>
-          <div class="eyebrow">Insights center</div>
-          <h2>Proxy quality and readiness analytics</h2>
-          <p>Track inventory health, capability readiness, protocol mix, and geo/provider concentration before routing real clients.</p>
-        </div>
-        <div class="stats-insights-actions">
-          <button class="btn btn-primary" onclick="showTab('monitor', event)">Refresh validation</button>
-          <button class="btn" onclick="showTab('server', event)">Build server</button>
-        </div>
-      </div>
-      <div id="stats-readiness-insights" class="stats-readiness-insights">
-        <div class="stats-insight-card"><span>Web readiness</span><strong id="stats-insight-web">0%</strong><small>alive proxies with HTTPS OK</small></div>
-        <div class="stats-insight-card"><span>Telegram readiness</span><strong id="stats-insight-telegram">0%</strong><small>alive proxies reaching Telegram</small></div>
-        <div class="stats-insight-card"><span>Full capability</span><strong id="stats-insight-full">0%</strong><small>HTTPS + DNS + Telegram</small></div>
-        <div class="stats-insight-card"><span>Quality note</span><strong id="stats-insight-note">Waiting</strong><small id="stats-insight-note-detail">Load stats to calculate readiness.</small></div>
-      </div>
-      <div id="stats-insight-summary" class="stats-insight-summary">Waiting for stats snapshot...</div>
-      <div class="stats-grid">
-        <div class="stat-card"><div class="stat-value" id="stat-total">0</div><div class="stat-label">Total Proxies</div></div>
-        <div class="stat-card"><div class="stat-value" id="stat-alive" style="color:var(--success)">0</div><div class="stat-label">Alive</div></div>
-        <div class="stat-card"><div class="stat-value" id="stat-flaky" style="color:#f59e0b">0</div><div class="stat-label">Flaky</div></div>
-        <div class="stat-card"><div class="stat-value" id="stat-cooling" style="color:#8b5cf6">0</div><div class="stat-label">Cooling</div></div>
-        <div class="stat-card"><div class="stat-value" id="stat-soft" style="color:#FF9800">0</div><div class="stat-label">Soft</div></div>
-        <div class="stat-card"><div class="stat-value" id="stat-revived" style="color:#757575">0</div><div class="stat-label">Revived</div></div>
-        <div class="stat-card"><div class="stat-value" id="stat-semi-revived" style="color:#424242">0</div><div class="stat-label">Semi-Revived</div></div>
-        <div class="stat-card"><div class="stat-value" id="stat-dead" style="color:var(--danger)">0</div><div class="stat-label">Dead</div></div>
-        <div class="stat-card"><div class="stat-value" id="stat-untested" style="color:var(--muted)">0</div><div class="stat-label">Untested</div></div>
-        <div class="stat-card"><div class="stat-value" id="stat-web-ready" style="color:var(--success)">0</div><div class="stat-label">Web-ready</div></div>
-        <div class="stat-card"><div class="stat-value" id="stat-telegram-ready" style="color:#0088cc">0</div><div class="stat-label">Telegram-ready</div></div>
-        <div class="stat-card"><div class="stat-value" id="stat-full-capability" style="color:var(--accent)">0</div><div class="stat-label">Full-capability</div></div>
-      </div>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
-        <div class="card">
-          <div class="card-header"><div class="card-title">Status Distribution</div></div>
-          <div id="stats-overview-chart" style="height:200px;display:flex;align-items:flex-end;justify-content:space-around;padding:16px">
-            <div style="text-align:center">
-              <div id="chart-bar-alive" style="width:60px;background:var(--success);height:0;border-radius:4px 4px 0 0"></div>
-              <div style="margin-top:8px;font-size:12px">Alive</div>
-              <div id="chart-label-alive" style="font-weight:bold">0</div>
-            </div>
-            <div style="text-align:center">
-              <div id="chart-bar-flaky" style="width:60px;background:#f59e0b;height:0;border-radius:4px 4px 0 0"></div>
-              <div style="margin-top:8px;font-size:12px">Flaky</div>
-              <div id="chart-label-flaky" style="font-weight:bold">0</div>
-            </div>
-            <div style="text-align:center">
-              <div id="chart-bar-cooling" style="width:60px;background:#8b5cf6;height:0;border-radius:4px 4px 0 0"></div>
-              <div style="margin-top:8px;font-size:12px">Cooling</div>
-              <div id="chart-label-cooling" style="font-weight:bold">0</div>
-            </div>
-            <div style="text-align:center">
-              <div id="chart-bar-soft" style="width:60px;background:#FF9800;height:0;border-radius:4px 4px 0 0"></div>
-              <div style="margin-top:8px;font-size:12px">Soft</div>
-              <div id="chart-label-soft" style="font-weight:bold">0</div>
-            </div>
-            <div style="text-align:center">
-              <div id="chart-bar-revived" style="width:60px;background:#757575;height:0;border-radius:4px 4px 0 0"></div>
-              <div style="margin-top:8px;font-size:12px">Revived</div>
-              <div id="chart-label-revived" style="font-weight:bold">0</div>
-            </div>
-            <div style="text-align:center">
-              <div id="chart-bar-semi-revived" style="width:60px;background:#424242;height:0;border-radius:4px 4px 0 0"></div>
-              <div style="margin-top:8px;font-size:12px">Semi-Revived</div>
-              <div id="chart-label-semi-revived" style="font-weight:bold">0</div>
-            </div>
-            <div style="text-align:center">
-              <div id="chart-bar-dead" style="width:60px;background:var(--danger);height:0;border-radius:4px 4px 0 0"></div>
-              <div style="margin-top:8px;font-size:12px">Dead</div>
-              <div id="chart-label-dead" style="font-weight:bold">0</div>
-            </div>
-            <div style="text-align:center">
-              <div id="chart-bar-untested" style="width:60px;background:var(--muted);height:0;border-radius:4px 4px 0 0"></div>
-              <div style="margin-top:8px;font-size:12px">Untested</div>
-              <div id="chart-label-untested" style="font-weight:bold">0</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header"><div class="card-title">Average Speed</div>
-          <div style="font-size:24px;font-weight:bold" id="stat-speed">0ms</div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:16px">
-        <div class="card-header"><div class="card-title">Proxies by Protocol</div></div>
-        <div id="stats-protocol-list" style="display:grid;gap:8px"></div>
-      </div>
-
-      <div class="card" style="margin-top:16px">
-        <div class="card-header"><div class="card-title">Protocol Status Breakdown</div></div>
-        <div id="stats-protocol-breakdown" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px"></div>
-      </div>
-
-      <div class="card" style="margin-top:16px">
-        <div class="card-header"><div class="card-title">Top Countries</div></div>
-        <div id="stats-country-list" style="display:grid;gap:8px"></div>
-      </div>
-
-      <div class="card" style="margin-top:16px">
-        <div class="card-header"><div class="card-title">Top ISPs</div></div>
-        <div id="stats-isp-list" style="display:grid;gap:8px"></div>
-      </div>
+<div id="tab-stats" class="tab-content {{ 'hidden' if tab!='stats' else '' }}">
+  <section class="insights-hero">
+    <div>
+      <span class="page-eyebrow">Intelligence</span>
+      <h2>Pool quality at a glance</h2>
+      <p>Understand stability, freshness, capability coverage, latency, and concentration without scanning raw proxy rows.</p>
     </div>
+    <div class="insights-hero-actions">
+      <span id="insights-updated" class="workspace-updated">Not loaded yet</span>
+      <button class="btn" type="button" onclick="window.InsightsWorkspace.refresh()">Refresh snapshot</button>
+      <button class="btn btn-primary" type="button" onclick="showTab('monitor', event)">Run validation</button>
+    </div>
+  </section>
+
+  <section class="insights-kpi-grid" aria-label="Pool summary">
+    <article class="insights-kpi insights-kpi-primary"><span>Stable proxies</span><strong id="insights-stable">—</strong><small id="insights-success-rate">— of tested inventory</small></article>
+    <article class="insights-kpi"><span>HTTPS ready</span><strong id="insights-web-rate">—</strong><small id="insights-web-count">— proxies</small></article>
+    <article class="insights-kpi"><span>Full capability</span><strong id="insights-full-rate">—</strong><small id="insights-full-count">— proxies</small></article>
+    <article class="insights-kpi"><span>Average latency</span><strong id="insights-latency">—</strong><small>Average observed latency</small></article>
+    <article class="insights-kpi"><span>Freshly checked</span><strong id="insights-fresh-rate">—</strong><small id="insights-fresh-count">Within the last hour</small></article>
+  </section>
+
+  <section class="insights-main-grid">
+    <article class="workspace-card insights-quality-card">
+      <header class="workspace-card-header">
+        <div><span class="page-eyebrow">Health distribution</span><h3>What can be trusted now?</h3></div>
+        <span class="status-pill" id="insights-quality-note">Waiting</span>
+      </header>
+      <div id="insights-health-bars" class="insights-stacked-bars" aria-label="Proxy status distribution"></div>
+      <div id="insights-health-legend" class="insights-legend"></div>
+      <div id="insights-recommendation" class="insights-callout">Load the snapshot to generate an operational recommendation.</div>
+    </article>
+
+    <article class="workspace-card">
+      <header class="workspace-card-header"><div><span class="page-eyebrow">Validation freshness</span><h3>How current is the evidence?</h3></div></header>
+      <div id="insights-freshness" class="insights-band-list"></div>
+    </article>
+  </section>
+
+  <section class="insights-split-grid">
+    <article class="workspace-card">
+      <header class="workspace-card-header"><div><span class="page-eyebrow">Latency profile</span><h3>Alive proxy response bands</h3></div></header>
+      <div id="insights-latency-bands" class="insights-band-list"></div>
+    </article>
+    <article class="workspace-card">
+      <header class="workspace-card-header"><div><span class="page-eyebrow">Reliability profile</span><h3>Observed success consistency</h3></div></header>
+      <div id="insights-reliability-bands" class="insights-band-list"></div>
+    </article>
+  </section>
+
+  <section class="insights-split-grid insights-protocol-grid">
+    <article class="workspace-card">
+      <header class="workspace-card-header"><div><span class="page-eyebrow">Protocol mix</span><h3>Coverage by listener type</h3></div></header>
+      <div id="insights-protocols" class="insights-protocol-list"></div>
+    </article>
+    <article class="workspace-card">
+      <header class="workspace-card-header"><div><span class="page-eyebrow">Capability coverage</span><h3>What workloads are ready?</h3></div></header>
+      <div id="insights-capabilities" class="insights-capability-list"></div>
+    </article>
+  </section>
+
+  <section class="insights-split-grid">
+    <article class="workspace-card">
+      <header class="workspace-card-header"><div><span class="page-eyebrow">Geographic concentration</span><h3>Top countries</h3></div><span id="insights-country-risk" class="status-pill">—</span></header>
+      <div id="insights-countries" class="insights-ranking"></div>
+    </article>
+    <article class="workspace-card">
+      <header class="workspace-card-header"><div><span class="page-eyebrow">Provider concentration</span><h3>Top network providers</h3></div><span id="insights-isp-risk" class="status-pill">—</span></header>
+      <div id="insights-isps" class="insights-ranking"></div>
+    </article>
+  </section>
+</div>

@@ -180,3 +180,7 @@ Validation profiles now use a dedicated, responsive workspace with searchable ru
 ## Serving workspace
 
 Server profiles now use a dedicated Serving Center with searchable runtime state, credential-redacted profile details, copyable client endpoints, bounded log inspection, capability-aware candidate preflight, and a responsive profile editor. Listener security and process ownership remain enforced by the backend. See [`docs/SERVING_UI.md`](docs/SERVING_UI.md).
+
+## Insights, Operations, and Access
+
+The remaining administration surfaces now use dedicated responsive pages. Insights summarizes quality, freshness, latency, reliability, capability coverage, and network concentration. Operations provides security/runtime preflight, backups, password rotation, and guarded maintenance. Access manages database users, effective permissions, proxy scope, and API sessions while protecting the final active administrator. See [`docs/INSIGHTS_OPERATIONS_UI.md`](docs/INSIGHTS_OPERATIONS_UI.md).

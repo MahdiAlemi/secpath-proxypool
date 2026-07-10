@@ -198,9 +198,9 @@ class StatsRenderTest(unittest.TestCase):
                     sess['user_id'] = 0
                 res = client.get('/index?tab=stats')
                 self.assertEqual(res.status_code, 200)
-                self.assertIn(b'stats-readiness-insights', res.data)
-                self.assertIn(b'Insights center', res.data)
-                self.assertIn(b'stats-insight-summary', res.data)
+                self.assertIn(b'insights-kpi-grid', res.data)
+                self.assertIn(b'Pool quality at a glance', res.data)
+                self.assertIn(b'insights-health-bars', res.data)
         finally:
             if getattr(db, 'Session', None) is not None:
                 db.Session.remove()
@@ -219,11 +219,34 @@ class SettingsRenderTest(unittest.TestCase):
                 with client.session_transaction() as sess:
                     sess['user'] = 'admin'
                     sess['user_id'] = 0
-                res = client.get('/')
+                res = client.get('/index?tab=operations')
                 self.assertEqual(res.status_code, 200)
-                self.assertIn(b'Operations Center', res.data)
-                self.assertIn(b'settings-ops-grid', res.data)
-                self.assertIn(b'settings-danger-zone', res.data)
+                self.assertIn(b'Operations and maintenance', res.data)
+                self.assertIn(b'operations-summary-grid', res.data)
+                self.assertIn(b'operations-danger-zone', res.data)
+        finally:
+            if getattr(db, 'Session', None) is not None:
+                db.Session.remove()
+            if getattr(db, 'engine', None) is not None:
+                db.engine.dispose()
+
+
+class AccessRenderTest(unittest.TestCase):
+    def test_access_control_shell_renders(self):
+        from dashboard import create_app
+        from database import db
+        app = create_app()
+        app.config['TESTING'] = True
+        try:
+            with app.test_client() as client:
+                with client.session_transaction() as sess:
+                    sess['user'] = 'admin'
+                    sess['user_id'] = 0
+                res = client.get('/index?tab=users')
+                self.assertEqual(res.status_code, 200)
+                self.assertIn(b'Access control', res.data)
+                self.assertIn(b'access-user-list', res.data)
+                self.assertIn(b'access-detail-card', res.data)
         finally:
             if getattr(db, 'Session', None) is not None:
                 db.Session.remove()

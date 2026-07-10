@@ -7,7 +7,9 @@
     import: {section: 'Workflow', title: 'Sources'},
     monitor: {section: 'Workflow', title: 'Validation'},
     server: {section: 'Workflow', title: 'Serving'},
-    stats: {section: 'Intelligence', title: 'Insights'}
+    stats: {section: 'Intelligence', title: 'Insights'},
+    operations: {section: 'Administration', title: 'Operations'},
+    users: {section: 'Administration', title: 'Access'}
   };
 
   function setSidebar(open) {
@@ -25,14 +27,20 @@
 
     var primary = document.getElementById('topbar-add-proxy');
     if (primary) {
+      var can = function (permission) {
+        return typeof window.hasPermission !== 'function' || window.hasPermission(permission);
+      };
       primary.hidden = false;
-      if (tab === 'monitor') {
+      if (tab === 'monitor' && can('monitor.control')) {
         primary.textContent = '＋ New profile';
         primary.onclick = function () { if (typeof window.showAddMonitorForm === 'function') window.showAddMonitorForm(); };
-      } else if (tab === 'server') {
+      } else if (tab === 'server' && can('server.control')) {
         primary.textContent = '＋ New server';
         primary.onclick = function () { if (typeof window.showAddServerForm === 'function') window.showAddServerForm(); };
-      } else if (tab === 'cockpit' || tab === 'proxies') {
+      } else if (tab === 'users' && can('users.manage')) {
+        primary.textContent = '＋ New user';
+        primary.onclick = function () { if (window.AccessWorkspace) window.AccessWorkspace.create(); };
+      } else if ((tab === 'cockpit' || tab === 'proxies') && can('proxies.add')) {
         primary.textContent = '＋ Add proxy';
         primary.onclick = function () { if (typeof window.openModal === 'function') window.openModal('modal-add'); };
       } else {

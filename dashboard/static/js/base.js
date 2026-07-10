@@ -292,6 +292,7 @@ function applyProxyFiltersToUI() {
 function hasPermission(perm) {
   return currentUserPermissions.includes(perm) || currentUserPermissions.includes('*');
 }
+window.hasPermission = hasPermission;
 
 function applyTabPermissions() {
   var toggleTab = function(tab, visible) {
@@ -305,6 +306,8 @@ function applyTabPermissions() {
   toggleTab('monitor', hasPermission('monitor.view'));
   toggleTab('server', hasPermission('server.view'));
   toggleTab('stats', hasPermission('stats.view'));
+  toggleTab('operations', hasPermission('settings.view'));
+  toggleTab('users', hasPermission('users.manage'));
 
   if (!hasPermission('proxies.add')) {
     document.getElementById('topbar-add-proxy')?.style.setProperty('display', 'none');
@@ -324,8 +327,8 @@ function applyTabPermissions() {
     document.getElementById('auto-refresh-sec')?.style.setProperty('display', 'none');
     document.getElementById('auto-refresh-btn')?.style.setProperty('display', 'none');
   }
-  if (!hasPermission('users.manage')) {
-    document.querySelector('.sidebar-utility[onclick*="modal-users"]')?.style.setProperty('display', 'none');
+  if (typeof window.updateShellForTab === 'function') {
+    window.updateShellForTab(currentTab || 'cockpit', {updateHistory: false});
   }
 }
 
@@ -594,7 +597,7 @@ async function loadCockpit() {
 }
 
 function showTab(tab, evt, options) {
-  var allowedTabs = ['cockpit', 'proxies', 'import', 'monitor', 'server', 'stats'];
+  var allowedTabs = ['cockpit', 'proxies', 'import', 'monitor', 'server', 'stats', 'operations', 'users'];
   if (!allowedTabs.includes(tab)) tab = 'cockpit';
   currentTab = tab;
 
@@ -619,7 +622,9 @@ function showTab(tab, evt, options) {
     applyProxyFiltersToUI();
   }
   if (tab === 'import' && window.SourceWorkspace) window.SourceWorkspace.init();
-  if (tab === 'stats') loadStats();
+  if (tab === 'stats' && window.InsightsWorkspace) window.InsightsWorkspace.init();
+  if (tab === 'operations' && window.OperationsWorkspace) window.OperationsWorkspace.init();
+  if (tab === 'users' && window.AccessWorkspace) window.AccessWorkspace.init();
   if (tab === 'monitor' && window.ValidationWorkspace) window.ValidationWorkspace.init();
   if (tab === 'server' && window.ServingWorkspace) window.ServingWorkspace.init();
 

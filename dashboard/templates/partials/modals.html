@@ -1,128 +1,3 @@
-<!-- SETTINGS MODAL -->
-<div id="modal-settings" class="modal">
-  <div class="modal-content operations-modal">
-    <div class="modal-header">
-      <div>
-        <div class="modal-title">Operations Center</div>
-        <div class="section-hint">Manage dashboard access, database backups, diagnostics, cleanup, and destructive maintenance.</div>
-      </div>
-      <button class="modal-close" onclick="closeModal('modal-settings')">&times;</button>
-    </div>
-
-    <div class="settings-ops-grid">
-      <div class="settings-op-card">
-        <div class="settings-op-title">Dashboard access</div>
-        <div class="settings-op-desc">Update the local dashboard password used for admin access.</div>
-        <div class="settings-inline-form">
-          <input type="password" id="new-password" class="form-input" placeholder="New password">
-          <button class="btn btn-primary" onclick="changePassword()">Update</button>
-        </div>
-      </div>
-
-      <div class="settings-op-card">
-        <div class="settings-op-title">Database</div>
-        <div class="settings-op-desc">Export a backup or import an existing SQLite/MySQL backup file.</div>
-        <div class="settings-db-row">
-          <span id="db-info" class="settings-db-pill">SQLite</span>
-          <span id="settings-db-summary" class="settings-muted">Waiting for settings...</span>
-        </div>
-        <div class="settings-actions-row">
-          <button class="btn btn-sm" onclick="backupDB()">Export</button>
-          <button class="btn btn-sm" onclick="openImportModal()">Import</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="settings-section-card">
-      <div class="settings-section-header">
-        <div>
-          <div class="settings-op-title">Diagnostics / Preflight</div>
-          <div class="settings-op-desc">Check DB health, readiness counters, runtime files, and recommended next actions.</div>
-        </div>
-        <div class="settings-actions-row">
-          <button class="btn btn-sm" onclick="loadDiagnostics()">Refresh Diagnostics</button>
-          <span id="diagnostics-status" class="settings-muted">Open settings to load snapshot.</span>
-        </div>
-      </div>
-      <div id="diagnostics-panel" class="settings-diagnostics-grid"></div>
-      <div id="diagnostics-recommendations" class="settings-recommendations"></div>
-    </div>
-
-    <div class="settings-section-card">
-      <div class="settings-section-header">
-        <div>
-          <div class="settings-op-title">Runtime cleanup</div>
-          <div class="settings-op-desc">Cleanup actions do not delete the database. Normalize legacy statuses before re-validation.</div>
-        </div>
-      </div>
-      <div class="settings-actions-row">
-        <button class="btn btn-sm" onclick="cleanupLogs()">Clear Logs</button>
-        <button class="btn btn-sm" onclick="cleanupRuntimeFiles()">Clear Runtime Files</button>
-        <button class="btn btn-sm btn-primary" onclick="cleanupLegacyStatuses()" title="Recommended after upgrading: reclassify old pre-Phase-5 revived rows so a monitor run re-validates them">⚡ Normalize Legacy Statuses</button>
-      </div>
-    </div>
-
-    <div id="import-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000">
-      <div style="background:var(--panel);padding:24px;border-radius:12px;max-width:400px;margin:100px auto">
-        <h3>Import Database</h3>
-        <div style="margin:16px 0">
-          <label class="form-label">Mode</label>
-          <select id="import-mode" class="form-input">
-            <option value="append">Append (add to existing)</option>
-            <option value="replace">Replace (clear all first)</option>
-          </select>
-        </div>
-        <div style="margin:16px 0">
-          <label class="form-label">Backup File (.sql for MySQL, .sqlite for SQLite)</label>
-          <input type="file" id="import-file" accept=".sql,.sqlite" class="form-input">
-        </div>
-        <div style="display:flex;gap:12px;justify-content:flex-end">
-          <button class="btn" onclick="document.getElementById('import-modal').style.display='none'">Cancel</button>
-          <button class="btn btn-primary" id="import-btn" onclick="importDB()">Import</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="settings-danger-zone">
-      <div class="settings-section-header">
-        <div>
-          <div class="settings-op-title">Danger zone</div>
-          <div class="settings-op-desc">Permanently delete proxies by protocol/status or use quick destructive cleanup actions.</div>
-        </div>
-      </div>
-      <div class="settings-danger-controls">
-        <select id="delete-protocol" class="form-input">
-          <option value="all">All Protocols</option>
-          <option value="http">HTTP</option>
-          <option value="https">HTTPS</option>
-          <option value="socks4">SOCKS4</option>
-          <option value="socks5">SOCKS5</option>
-        </select>
-        <select id="delete-status" class="form-input">
-          <option value="all">All Status</option>
-          <option value="alive">Alive Only</option>
-          <option value="flaky">Flaky Only</option>
-          <option value="cooling">Cooling Only</option>
-          <option value="soft">Soft Only</option>
-          <option value="revived">Revived Only</option>
-          <option value="semi-revived">Semi-Revived Only</option>
-          <option value="dead">Dead Only</option>
-          <option value="untested">Untested Only</option>
-        </select>
-        <button class="btn btn-danger" onclick="bulkDeleteProxies()">Delete Selected</button>
-      </div>
-      <div class="settings-actions-row danger-actions">
-        <button class="btn btn-sm btn-danger" onclick="clearDeadProxies()">Clear All Dead</button>
-        <button class="btn btn-sm btn-danger" onclick="clearByProtocol('http')">Clear HTTP</button>
-        <button class="btn btn-sm btn-danger" onclick="clearByProtocol('https')">Clear HTTPS</button>
-        <button class="btn btn-sm btn-danger" onclick="clearByProtocol('socks4')">Clear SOCKS4</button>
-        <button class="btn btn-sm btn-danger" onclick="clearByProtocol('socks5')">Clear SOCKS5</button>
-        <button class="btn btn-sm btn-danger" onclick="clearAllProxies()">Clear ALL</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <!-- ADD PROXY MODAL -->
 <div id="modal-add" class="modal">
   <div class="modal-content">
@@ -468,99 +343,44 @@
   </div>
 </div>
 
-<!-- USERS MODAL -->
-<div id="modal-users" class="modal">
-  <div class="modal-content" style="max-width:700px;max-height:80vh;overflow:auto">
+<!-- ADD / EDIT USER -->
+<div id="modal-user-form" class="modal" role="dialog" aria-modal="true" aria-labelledby="user-form-title">
+  <div class="modal-content access-editor-modal">
     <div class="modal-header">
-      <div class="modal-title">User Management</div>
-      <button class="modal-close" onclick="closeModal('modal-users')">&times;</button>
-    </div>
-    <div style="margin-bottom:16px">
-      <button class="btn btn-primary" onclick="showAddUserModal()">+ Add User</button>
-    </div>
-    <div id="users-list"></div>
-  </div>
-</div>
-
-<!-- ADD/EDIT USER MODAL -->
-<div id="modal-user-form" class="modal">
-  <div class="modal-content" style="max-width:600px">
-    <div class="modal-header">
-      <div class="modal-title" id="user-form-title">Add User</div>
-      <button class="modal-close" onclick="closeModal('modal-user-form')">&times;</button>
+      <div><div class="modal-title" id="user-form-title">Create user</div><div class="section-hint" id="user-form-subtitle">Define identity, role defaults, permission overrides, and proxy scope.</div></div>
+      <button class="modal-close" type="button" onclick="closeModal('modal-user-form')" aria-label="Close user editor">&times;</button>
     </div>
     <input type="hidden" id="edit-user-id">
-    <div class="form-group">
-      <label class="form-label">Username</label>
-      <input type="text" id="user-username" class="form-input">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Password</label>
-      <input type="password" id="user-password" class="form-input">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Role</label>
-      <select id="user-role" class="form-input" onchange="updateRolePermissions()">
-        <option value="user">User - Basic access</option>
-        <option value="superadmin">Superadmin - Advanced access</option>
-        <option value="admin">Admin - Full access</option>
-      </select>
-    </div>
-    <div id="role-description" style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:16px;font-size:12px;color:var(--muted)">
-      <div id="role-desc-user" style="display:block">
-        <strong>User</strong> - Can view proxies and server status only. Can be customized with additional permissions.
-      </div>
-      <div id="role-desc-superadmin" style="display:none">
-        <strong>Superadmin</strong> - Can manage proxies, monitor, server, and settings. Cannot manage users.
-      </div>
-      <div id="role-desc-admin" style="display:none">
-        <strong>Admin</strong> - Full access to everything including user management.
-      </div>
-    </div>
-    <div class="form-group" id="custom-perms-group">
-      <label class="form-label">Custom Permissions</label>
-      <div id="custom-perms-list" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:12px"></div>
-      <div id="proxy-filters-group" style="display:none;margin-top:16px">
-        <div onclick="togglePermCategory('proxy-filters')" style="font-weight:600;font-size:12px;color:var(--accent);margin-bottom:8px;padding:6px 8px;background:var(--panel-light);border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center">
-          <span>Proxy Access Filters</span>
-          <span id="proxy-filters-icon">▶</span>
-        </div>
-        <div id="proxy-filters" style="display:none;padding:4px 0">
-          <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Restrict which proxies this user can see</div>
-          <div style="margin-bottom:16px">
-            <div style="font-size:12px;font-weight:500;margin-bottom:4px">Allowed Statuses:</div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px">
-              <label><input type="checkbox" class="proxy-filter-status" value="alive"> Alive</label>
-              <label><input type="checkbox" class="proxy-filter-status" value="flaky"> Flaky</label>
-              <label><input type="checkbox" class="proxy-filter-status" value="cooling"> Cooling</label>
-              <label><input type="checkbox" class="proxy-filter-status" value="soft"> Soft</label>
-              <label><input type="checkbox" class="proxy-filter-status" value="revived"> Revived</label>
-              <label><input type="checkbox" class="proxy-filter-status" value="semi-revived"> Semi-Revived</label>
-              <label><input type="checkbox" class="proxy-filter-status" value="dead"> Dead</label>
-              <label><input type="checkbox" class="proxy-filter-status" value="untested"> Untested</label>
-            </div>
+    <div class="access-editor-grid">
+      <div>
+        <section class="access-editor-section">
+          <h4>Account identity</h4>
+          <div class="form-group"><label class="form-label" for="user-username">Username</label><input type="text" id="user-username" class="form-input" minlength="3" maxlength="50" autocomplete="off" placeholder="operator.name"></div>
+          <div class="form-group"><label class="form-label" for="user-password">Password</label><input type="password" id="user-password" class="form-input" minlength="12" autocomplete="new-password" placeholder="Required for a new user"><small id="user-password-hint">At least 12 characters.</small></div>
+          <div class="form-group"><label class="form-label" for="user-role">Role</label><select id="user-role" class="form-input"><option value="user">User · limited by default</option><option value="superadmin">Superadmin · operations access</option><option value="admin">Admin · full access</option></select></div>
+          <div id="role-description" class="access-role-description"></div>
+          <label class="serving-choice"><input type="checkbox" id="user-active" checked><span>Account is active</span></label>
+        </section>
+        <section class="access-editor-section" id="proxy-filters-group">
+          <h4>Proxy scope</h4>
+          <p class="section-hint">Leaving every option selected means unrestricted access inside the granted proxy permissions.</p>
+          <strong class="form-label">Allowed statuses</strong>
+          <div class="access-scope-options" id="access-status-scope">
+            <label><input type="checkbox" class="proxy-filter-status" value="alive">Alive</label><label><input type="checkbox" class="proxy-filter-status" value="flaky">Flaky</label><label><input type="checkbox" class="proxy-filter-status" value="cooling">Cooling</label><label><input type="checkbox" class="proxy-filter-status" value="soft">Soft</label><label><input type="checkbox" class="proxy-filter-status" value="revived">Revived</label><label><input type="checkbox" class="proxy-filter-status" value="semi-revived">Semi-revived</label><label><input type="checkbox" class="proxy-filter-status" value="dead">Dead</label><label><input type="checkbox" class="proxy-filter-status" value="untested">Untested</label>
           </div>
-          <div style="margin-top:16px">
-            <div style="font-size:12px;font-weight:500;margin-bottom:4px">Allowed Protocols:</div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px">
-              <label><input type="checkbox" class="proxy-filter-proto" value="http"> HTTP</label>
-              <label><input type="checkbox" class="proxy-filter-proto" value="https"> HTTPS</label>
-              <label><input type="checkbox" class="proxy-filter-proto" value="socks4"> SOCKS4</label>
-              <label><input type="checkbox" class="proxy-filter-proto" value="socks5"> SOCKS5</label>
-            </div>
+          <strong class="form-label access-scope-heading">Allowed protocols</strong>
+          <div class="access-scope-options" id="access-protocol-scope">
+            <label><input type="checkbox" class="proxy-filter-proto" value="http">HTTP</label><label><input type="checkbox" class="proxy-filter-proto" value="https">HTTPS</label><label><input type="checkbox" class="proxy-filter-proto" value="socks4">SOCKS4</label><label><input type="checkbox" class="proxy-filter-proto" value="socks5">SOCKS5</label>
           </div>
-        </div>
+        </section>
       </div>
+      <aside class="access-editor-section">
+        <h4>Effective permissions</h4>
+        <p class="section-hint">Role defaults are preselected. Clear a default or add a capability to create an explicit override.</p>
+        <div id="custom-perms-list" class="access-permission-groups"></div>
+      </aside>
     </div>
-    <div class="form-group">
-      <label style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="user-active" checked> Active
-      </label>
-    </div>
-    <div style="display:flex;gap:12px">
-      <button class="btn btn-primary" onclick="saveUser()">Save</button>
-      <button class="btn" onclick="closeModal('modal-user-form')">Cancel</button>
-    </div>
+    <div class="access-editor-footer"><span id="access-user-form-status" role="status"></span><div><button class="btn" type="button" onclick="closeModal('modal-user-form')">Cancel</button><button class="btn btn-primary" id="access-user-save" type="button">Save user</button></div></div>
   </div>
 </div>
 
