@@ -598,6 +598,75 @@ function setAutoRefreshInterval(sec) {
 
 var currentTab = 'proxies';
 
+
+function cockpitMetric(label, value, hint, color) {
+  return '<div class="cockpit-metric"><span>' + escapeHtml(label) + '</span><strong style="color:' + (color || 'var(--text)') + '">' + escapeHtml(value) + '</strong><small>' + escapeHtml(hint || '') + '</small></div>';
+}
+
+function cockpitAction(text, tone) {
+  var cls = tone === 'danger' ? ' danger' : (tone === 'ok' ? ' ok' : '');
+  return '<div class="cockpit-action' + cls + '">' + escapeHtml(text) + '</div>';
+}
+
+async function loadCockpit() {
+  var health = document.getElementById('cockpit-health');
+  var readiness = document.getElementById('cockpit-readiness');
+  var runtime = document.getElementById('cockpit-runtime');
+  var actions = document.getElementById('cockpit-next-actions');
+  if (!health || !readiness || !runtime || !actions) return;
+  health.innerHTML = readiness.innerHTML = runtime.innerHTML = actions.innerHTML = '<div style="color:var(--muted);font-size:12px">Loading cockpit...</div>';
+  try {
+    var statsRes = await authFetch('/api/stats');
+    var stats = await statsRes.json();
+    var diagRes = await authFetch('/api/settings/diagnostics');
+    var diag = await diagRes.json();
+    var serverRes = await authFetch('/api/server');
+    var serverData = await serverRes.json();
+    var servers = serverData.servers || {};
+    var serverPorts = Object.keys(servers);
+    var runningServers = serverPorts.filter(function(p) { return servers[p] && servers[p].running; }).length;
+    var counts = (diag && diag.counts) || {};
+    var db = (diag && diag.db) || {};
+    var total = stats.total || counts.total || 0;
+    var alive = stats.alive || counts.alive || 0;
+    var webReady = stats.web_ready || counts.web_ready || 0;
+    var telegramReady = stats.telegram_ready || counts.telegram_ready || 0;
+    var fullCap = stats.full_capability || counts.full_capability || 0;
+    var legacy = counts.legacy_revived || 0;
+
+    var readinessPct = alive ? Math.round((webReady / alive) * 100) : 0;
+    health.innerHTML =
+      cockpitMetric('Database', (db.type || 'sqlite').toUpperCase(), db.sqlite_size_mb != null ? Number(db.sqlite_size_mb).toFixed(2) + ' MB' : '', 'var(--accent)') +
+      cockpitMetric('Total proxies', total, 'inventory size') +
+      cockpitMetric('Alive', alive, 'currently usable status', 'var(--success)') +
+      cockpitMetric('Web readiness', readinessPct + '%', 'alive proxies with HTTPS OK', readinessPct >= 80 ? 'var(--success)' : 'var(--accent)');
+
+    readiness.innerHTML =
+      cockpitMetric('Web-ready', webReady, 'safe for HTTPS browsing', 'var(--success)') +
+      cockpitMetric('Telegram-ready', telegramReady, 'Telegram API reachable', '#0088cc') +
+      cockpitMetric('Full-capability', fullCap, 'HTTPS + DNS + Telegram', 'var(--accent)') +
+      cockpitMetric('Legacy revived', legacy, 'needs normalize/re-monitor', legacy ? 'var(--danger)' : 'var(--success)');
+
+    runtime.innerHTML =
+      '<div class="cockpit-runtime-row"><span>Server profiles</span><strong>' + serverPorts.length + '</strong></div>' +
+      '<div class="cockpit-runtime-row"><span>Running servers</span><strong>' + runningServers + '</strong></div>' +
+      '<div class="cockpit-runtime-row"><span>Progress files</span><strong>' + (((diag.runtime || {}).progress_files) || 0) + '</strong></div>' +
+      '<div class="cockpit-runtime-row"><span>Last scan</span><strong>' + escapeHtml(stats.last_scan ? new Date(stats.last_scan).toLocaleString() : '-') + '</strong></div>';
+
+    var recs = (diag.recommendations || []).slice();
+    if (total === 0) recs.unshift('Import fresh proxy sources to start building inventory.');
+    if (total > 0 && alive === 0) recs.unshift('Run a monitor to promote real working proxies.');
+    if (legacy > 0) recs.unshift('Normalize legacy statuses, then re-run monitor validation.');
+    if (webReady > 0 && runningServers === 0) recs.unshift('Create a Web Browsing server profile from the server builder.');
+    actions.innerHTML = (recs.length ? recs : ['System looks ready. Keep monitoring and serving by use case.']).slice(0, 6).map(function(r, i) {
+      return cockpitAction(r, i === 0 && (legacy > 0 || alive === 0) ? 'danger' : (i === 0 ? 'ok' : ''));
+    }).join('');
+  } catch (e) {
+    health.innerHTML = readiness.innerHTML = runtime.innerHTML = '';
+    actions.innerHTML = cockpitAction('Cockpit failed to load: ' + (e.message || e), 'danger');
+  }
+}
+
 function showTab(tab) {
   currentTab = tab;
   var guide = document.querySelector('.product-guide');
@@ -607,6 +676,7 @@ function showTab(tab) {
   document.querySelectorAll('.nav-btn').forEach(function(el) { el.classList.remove('active'); });
   event.target.classList.add('active');
 
+  if (tab === 'cockpit') loadCockpit();
   if (tab === 'proxies') {
     loadProxies();
     fetchStats();
@@ -2946,6 +3016,7 @@ var savedPageSize = localStorage.getItem('pageSize');
 if (savedPageSize) {
   document.getElementById('page-size').value = savedPageSize;
 }
+loadCockpit();
 loadProxies().then(function() {
   setTimeout(function() {
     initColumns();

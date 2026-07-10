@@ -24,6 +24,7 @@ userProxyFilters = {{ proxy_filters | tojson }};
   </div>
 
   <div class="nav">
+    <button class="nav-btn" onclick="showTab('cockpit')"><span>Cockpit</span><small>Overview</small></button>
     <button class="nav-btn  'active' if tab=='proxies' else '' " onclick="showTab('proxies')"><span>Inventory</span><small>Review</small></button>
     <button class="nav-btn  'active' if tab=='import' else '' " onclick="showTab('import')"><span>Import</span><small>Sources</small></button>
     <button class="nav-btn  'active' if tab=='monitor' else '' " onclick="showTab('monitor')"><span>Monitor</span><small>Validate</small></button>
@@ -49,6 +50,46 @@ userProxyFilters = {{ proxy_filters | tojson }};
       <div class="product-guide-card"><span class="step-badge">03</span><strong>Review readiness</strong><span>Use Web, Telegram, and DNS capability filters.</span></div>
       <div class="product-guide-card"><span class="step-badge">04</span><strong>Serve safely</strong><span>Create server profiles from use-case presets.</span></div>
     </div>
+    <!-- COCKPIT TAB -->
+    <div id="tab-cockpit" class="tab-content hidden">
+      <div class="cockpit-layout">
+        <div class="cockpit-main-card">
+          <div class="eyebrow">System cockpit</div>
+          <h2>ProxyPool readiness overview</h2>
+          <p>See whether the pool is ready for real traffic, what needs cleanup, and which action should happen next.</p>
+          <div id="cockpit-health" class="cockpit-health-grid"></div>
+        </div>
+        <div class="cockpit-side-card">
+          <div class="card-title">Next actions</div>
+          <div id="cockpit-next-actions" class="cockpit-actions-list"></div>
+        </div>
+      </div>
+
+      <div class="cockpit-grid">
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">Capability readiness</div><div class="section-hint">Use these numbers to decide which server preset is safe.</div></div></div>
+          <div id="cockpit-readiness" class="cockpit-metric-grid"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">Runtime status</div><div class="section-hint">Monitor/server/process snapshot.</div></div></div>
+          <div id="cockpit-runtime" class="cockpit-runtime-list"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div><div class="card-title">Operational shortcuts</div><div class="section-hint">Jump directly to the next stage of the workflow.</div></div>
+        </div>
+        <div class="cockpit-shortcuts">
+          <button class="btn btn-primary" onclick="showTab('import')">Import proxies</button>
+          <button class="btn" onclick="showTab('monitor')">Run monitor</button>
+          <button class="btn" onclick="showTab('proxies')">Review inventory</button>
+          <button class="btn" onclick="showTab('server')">Build server</button>
+          <button class="btn" onclick="openModal('modal-settings')">Diagnostics</button>
+        </div>
+      </div>
+    </div>
+
     <!-- PROXIES TAB -->
     <div id="tab-proxies" class="tab-content {{ 'hidden' if tab!='proxies' else '' }}">
       <div class="card">
