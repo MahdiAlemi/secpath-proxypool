@@ -7,6 +7,8 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
+from secpath_meta import DEVELOPER_CREDIT, PRODUCT_NAME, PUBLIC_SITE_NAME, VERSION_LABEL
+
 from .core import ValidationSummary
 
 CARD_COPY = {
@@ -103,14 +105,14 @@ def build_site(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Fresh public proxy exports validated and ranked automatically by SecPath ProxyPool.">
   <meta name="theme-color" content="#0b1524">
-  <meta property="og:title" content="SecPath Proxy Lists">
+  <meta property="og:title" content="{html.escape(PUBLIC_SITE_NAME)} {html.escape(VERSION_LABEL)}">
   <meta property="og:description" content="Download the current top 20 SOCKS5, SOCKS4, and HTTP/HTTPS public proxies as Excel files.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://proxy.secpath.space/">
   <link rel="canonical" href="https://proxy.secpath.space/">
   <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/app.css">
-  <title>SecPath Proxy Lists · Validated Public Proxy Exports</title>
+  <title>{html.escape(PUBLIC_SITE_NAME)} {html.escape(VERSION_LABEL)} · Validated Public Proxy Exports</title>
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -119,7 +121,8 @@ def build_site(
     <header class="hero">
       <a class="brand" href="{html.escape(repository_url)}" aria-label="Open SecPath ProxyPool on GitHub">
         <img src="assets/logo.svg" alt="SecPath ProxyPool logo" width="58" height="58">
-        <span>SecPath Proxy Lists</span>
+        <span>{html.escape(PUBLIC_SITE_NAME)}</span>
+        <small class="brand-version">{html.escape(VERSION_LABEL)}</small>
       </a>
       <div class="eyebrow">AUTOMATED PUBLIC VALIDATION</div>
       <h1>Fresh proxy exports.<br><span>Tested before download.</span></h1>
@@ -149,7 +152,7 @@ def build_site(
       <div>
         <span class="section-kicker">POWERED BY THE FULL PRODUCT</span>
         <h2>More than a proxy list.</h2>
-        <p>SecPath ProxyPool is a local-first control plane for importing, validating, analyzing, and serving proxy pools through one security-conscious operational dashboard.</p>
+        <p>{html.escape(PRODUCT_NAME)} is a local-first control plane for importing, validating, analyzing, and serving proxy pools through one security-conscious operational dashboard.</p>
       </div>
       <ul>
         <li>Normalize public and private sources</li>
@@ -157,7 +160,7 @@ def build_site(
         <li>Rank by reliability and capabilities</li>
         <li>Build rotating HTTP and SOCKS listeners</li>
       </ul>
-      <a class="github-button" href="{html.escape(repository_url)}">Explore SecPath ProxyPool on GitHub <span aria-hidden="true">↗</span></a>
+      <a class="github-button" href="{html.escape(repository_url)}">Explore {html.escape(PRODUCT_NAME)} on GitHub <span aria-hidden="true">↗</span></a>
     </section>
 
     <section class="method-panel">
@@ -169,7 +172,8 @@ def build_site(
     </section>
   </main>
   <footer>
-    <span>SecPath Proxy Lists</span>
+    <span>{html.escape(PUBLIC_SITE_NAME)} {html.escape(VERSION_LABEL)}</span>
+    <span>{html.escape(DEVELOPER_CREDIT)}</span>
     <span>Updated automatically by GitHub Actions</span>
   </footer>
 </body>
@@ -179,6 +183,10 @@ def build_site(
 
     metadata = {
         "generated_at": generated_iso,
+        "product": PRODUCT_NAME,
+        "site": PUBLIC_SITE_NAME,
+        "version": VERSION_LABEL,
+        "developer": DEVELOPER_CREDIT,
         "status": run_status,
         "checked": total_checked,
         "healthy": total_healthy,

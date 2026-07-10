@@ -7,6 +7,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter,
 .login-visual::after { content: ""; position: absolute; right: -150px; bottom: -150px; width: 430px; height: 430px; border: 1px solid rgba(111,198,217,.16); border-radius: 50%; box-shadow: 0 0 0 70px rgba(111,198,217,.035), 0 0 0 140px rgba(111,198,217,.02); }
 .login-brand, .login-message, .login-flow { position: relative; z-index: 1; }
 .login-brand { display: flex; align-items: center; gap: 11px; font-size: 14px; }
+.login-version { margin-left: 2px; padding: 3px 7px; border: 1px solid rgba(117,196,215,.22); border-radius: 999px; color: #75c4d7; font-size: 9px; font-weight: 800; letter-spacing: .06em; }
 .login-mark { width: 34px; height: 34px; display: grid; grid-template-columns: repeat(3, 5px); align-items: end; justify-content: center; gap: 3px; padding: 8px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; background: rgba(255,255,255,.05); }
 .login-mark span { width: 5px; border-radius: 3px; background: #54b5cc; }
 .login-mark span:nth-child(1) { height: 9px; opacity: .7; }.login-mark span:nth-child(2) { height: 17px; }.login-mark span:nth-child(3) { height: 13px; opacity: .82; }
@@ -31,6 +32,6 @@ button:hover { border-color: var(--accent-hover); background: var(--accent-hover
 .error[hidden] { display: none; }
 .setup-note { margin: 18px 0 0; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-light); color: var(--muted); font-size: 11px; line-height: 1.55; }
 .setup-note code { color: var(--text-strong); }
-.login-footnote { margin: 22px 0 0; color: var(--muted); font-size: 10px; text-align: center; }
+.login-footnote { display: flex; justify-content: center; flex-wrap: wrap; gap: 5px 12px; margin: 22px 0 0; color: var(--muted); font-size: 10px; text-align: center; }
 @media (max-width: 900px) { .login-shell { grid-template-columns: 1fr; }.login-visual { min-height: 280px; padding: 28px; }.login-message h1 { max-width: 620px; font-size: 38px; }.login-message p { margin-top: 12px; }.login-flow { display: none; }.login-panel { min-height: auto; padding: 42px 24px; } }
 @media (max-width: 520px) { .login-visual { min-height: 230px; padding: 22px; }.login-message h1 { font-size: 31px; }.login-message p { font-size: 12px; }.login-panel { padding: 34px 18px; } }

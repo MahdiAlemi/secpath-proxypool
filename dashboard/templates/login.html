@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>Sign in · SecPath ProxyPool</title>
+  <title>Sign in · {{ product_name }} {{ product_version }}</title>
   <link rel="icon" href="{{ url_for('favicon') }}" sizes="any">
   <script>
     (function () {
@@ -22,7 +22,7 @@
 <body>
   <main class="login-shell">
     <section class="login-visual" aria-label="SecPath ProxyPool overview">
-      <div class="login-brand"><div class="login-mark"><span></span><span></span><span></span></div><strong>SecPath ProxyPool</strong></div>
+      <div class="login-brand"><div class="login-mark"><span></span><span></span><span></span></div><strong>{{ product_name }}</strong><span class="login-version">{{ product_version }}</span></div>
       <div class="login-message">
         <span>Control plane</span>
         <h1>Qualify every route before it carries traffic.</h1>
@@ -59,7 +59,7 @@
         {% if not auth_configured %}
           <p class="setup-note">No environment-backed account is configured. Use a database user or create one with <code>python3 scripts/create_admin.py</code>.</p>
         {% endif %}
-        <p class="login-footnote">Local control plane · credentials stay on this host</p>
+        <p class="login-footnote"><span>{{ product_name }} {{ product_version }}</span><span>{{ developer_credit }}</span></p>
       </div>
     </section>
   </main>

@@ -41,7 +41,8 @@ if ((${#bad_modes[@]} > 0)); then
   exit 1
 fi
 
-if grep -RInE --exclude-dir=.git --exclude='*.log' --exclude='*.sqlite' --exclude='*.db' \
+if grep -RInE --exclude-dir=.git --exclude-dir=.venv --exclude-dir=venv --exclude-dir=env \
+  --exclude-dir=.ruff_cache --exclude-dir=__pycache__ --exclude='*.log' --exclude='*.sqlite' --exclude='*.db' \
   '^(<<<<<<<|=======|>>>>>>>)' . >/tmp/proxypool-conflicts.$$; then
   echo "[FAIL] Merge-conflict markers found:"
   cat /tmp/proxypool-conflicts.$$

@@ -12,8 +12,8 @@ window.initialDashboardTab = {{ tab | tojson }};
     <div class="sidebar-brand">
       <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
       <div class="brand-copy">
-        <strong>SecPath ProxyPool</strong>
-        <span>Control plane</span>
+        <strong>{{ product_name }}</strong>
+        <span>Control plane · {{ product_version }}</span>
       </div>
       <button class="sidebar-close" type="button" data-sidebar-close aria-label="Close navigation">×</button>
     </div>
@@ -87,7 +87,7 @@ window.initialDashboardTab = {{ tab | tojson }};
           <span></span><span></span><span></span>
         </button>
         <div>
-          <span class="topbar-eyebrow">SecPath ProxyPool / <span id="topbar-section">Overview</span></span>
+          <span class="topbar-eyebrow">{{ product_name }} {{ product_version }} / <span id="topbar-section">Overview</span></span>
           <h1 id="topbar-title">Cockpit</h1>
         </div>
       </div>
@@ -111,6 +111,10 @@ window.initialDashboardTab = {{ tab | tojson }};
       {% include "pages/operations.html" %}
       {% include "pages/users.html" %}
     </main>
+    <footer class="app-footer">
+      <span>{{ product_name }} {{ product_version }}</span>
+      <span>{{ developer_credit }}</span>
+    </footer>
   </section>
 </div>
 

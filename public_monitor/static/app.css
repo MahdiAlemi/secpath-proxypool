@@ -48,6 +48,7 @@ main { width: min(1160px, calc(100% - 40px)); margin: 0 auto; }
 .hero { padding: 52px 0 80px; max-width: 900px; }
 .brand { display: inline-flex; align-items: center; gap: 14px; color: var(--text); text-decoration: none; font-size: 20px; font-weight: 760; letter-spacing: -0.02em; }
 .brand img { filter: drop-shadow(0 12px 28px rgba(51, 208, 195, .24)); }
+.brand-version { padding: 4px 8px; border: 1px solid rgba(79,209,197,.24); border-radius: 999px; color: var(--accent); font-size: 10px; font-weight: 850; letter-spacing: .06em; }
 .eyebrow, .section-kicker { display: block; margin-top: 72px; color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: .16em; }
 .hero h1 { margin: 18px 0 24px; max-width: 860px; font-size: clamp(48px, 7vw, 82px); line-height: .98; letter-spacing: -.055em; }
 .hero h1 span { color: #9eb5c7; }
@@ -86,7 +87,7 @@ main { width: min(1160px, calc(100% - 40px)); margin: 0 auto; }
 .github-button:hover { border-color: var(--accent); }
 .method-panel { grid-template-columns: 1fr 1.1fr; }
 
-footer { display: flex; justify-content: space-between; gap: 20px; width: min(1160px, calc(100% - 40px)); margin: 0 auto; padding: 26px 0 40px; border-top: 1px solid var(--line); color: #738899; font-size: 13px; }
+footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; width: min(1160px, calc(100% - 40px)); margin: 0 auto; padding: 26px 0 40px; border-top: 1px solid var(--line); color: #738899; font-size: 13px; }
 
 @media (max-width: 900px) {
   .card-grid { grid-template-columns: 1fr; }

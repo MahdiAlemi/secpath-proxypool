@@ -6,6 +6,7 @@
   **A local-first control plane for importing, validating, analyzing, and serving proxy pools.**
 
   <p>
+    <img alt="Version v1.0.0" src="https://img.shields.io/badge/version-v1.0.0-167C80">
     <img alt="Python 3.11+" src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white">
     <img alt="Flask" src="https://img.shields.io/badge/Flask-2.3%2B-000000?logo=flask&logoColor=white">
     <img alt="SQLAlchemy" src="https://img.shields.io/badge/SQLAlchemy-2.0%2B-D71F00">
@@ -252,3 +253,7 @@ Keep secrets, proxy credentials, databases, generated lists, and runtime logs ou
 ## License
 
 No open-source license has been selected yet. Add a `LICENSE` file before granting public reuse, modification, or redistribution rights.
+
+---
+
+**SecPath ProxyPool v1.0.0** · Developed by **Mahdi Alemi**

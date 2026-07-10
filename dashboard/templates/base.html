@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#101820">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>{% block title %}SecPath ProxyPool Control Plane{% endblock %}</title>
+  <title>{% block title %}{{ product_name }} {{ product_version }} · Control Plane{% endblock %}</title>
   <link rel="icon" href="{{ url_for('favicon') }}" sizes="any">
   <link rel="icon" href="{{ url_for('static', filename='img/favicon.svg') }}" type="image/svg+xml">
   <script>

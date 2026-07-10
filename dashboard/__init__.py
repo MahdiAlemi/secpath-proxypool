@@ -25,6 +25,7 @@ from dashboard.security import (
     record_rate_limit_hit,
 )
 from database import db, ensure_db_schema
+from secpath_meta import DEVELOPER_CREDIT, PRODUCT_NAME, VERSION_LABEL
 
 
 def _utcnow_naive():
@@ -56,6 +57,14 @@ def create_app():
         )
 
     init_security(app)
+
+    @app.context_processor
+    def inject_product_metadata():
+        return {
+            "product_name": PRODUCT_NAME,
+            "product_version": VERSION_LABEL,
+            "developer_credit": DEVELOPER_CREDIT,
+        }
 
     # A brand-new SQLite/MySQL database must be usable on first startup.
     ensure_db_schema()

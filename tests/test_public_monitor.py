@@ -108,10 +108,14 @@ class PublicMonitorTest(unittest.TestCase):
         self.assertIn("SecPath Proxy Lists", html_text)
         self.assertIn("SecPath ProxyPool", html_text)
         self.assertIn("Download Excel", html_text)
+        self.assertIn("v1.0.0", html_text)
+        self.assertIn("Developed by Mahdi Alemi", html_text)
         self.assertIn("top-20-socks5.xlsx", html_text)
         self.assertNotIn("198.51.100.", html_text)
         self.assertNotIn("198.51.100.", metadata_text)
         self.assertEqual(metadata["groups"]["socks5"]["exported"], 20)
+        self.assertEqual(metadata["version"], "v1.0.0")
+        self.assertEqual(metadata["developer"], "Developed by Mahdi Alemi")
 
     def test_workflow_is_scheduled_manual_and_pages_only(self):
         workflow = Path(".github/workflows/public-proxy-monitor.yml").read_text(encoding="utf-8")
