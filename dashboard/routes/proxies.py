@@ -162,6 +162,31 @@ def _scoped_proxy(session, proxy_id):
     return apply_proxy_scope(session.query(Proxy)).filter(Proxy.id == proxy_id).first()
 
 
+def _selection_ids(data, *, limit=500):
+    if not isinstance(data, dict) or not isinstance(data.get("ids"), list):
+        return None, "ids must be an array"
+    if not data["ids"]:
+        return None, "Select at least one proxy"
+    if len(data["ids"]) > limit:
+        return None, f"A maximum of {limit} proxies can be selected"
+
+    result = []
+    seen = set()
+    for value in data["ids"]:
+        if isinstance(value, bool):
+            return None, "Proxy IDs must be positive integers"
+        try:
+            proxy_id = int(value)
+        except (TypeError, ValueError):
+            return None, "Proxy IDs must be positive integers"
+        if proxy_id <= 0:
+            return None, "Proxy IDs must be positive integers"
+        if proxy_id not in seen:
+            seen.add(proxy_id)
+            result.append(proxy_id)
+    return result, None
+
+
 @proxies_bp.route("/api/proxies", methods=["GET"])
 @login_required
 @require_permission("proxies.view")
@@ -191,6 +216,17 @@ def api_proxies():
             "pages": pages,
         }
     )
+
+
+@proxies_bp.route("/api/proxies/<int:proxy_id>", methods=["GET"])
+@login_required
+@require_permission("proxies.view")
+def api_proxy_detail(proxy_id):
+    db_session = get_db()
+    proxy = _scoped_proxy(db_session, proxy_id)
+    if not proxy:
+        return api_error("Proxy not found", 404, "not_found")
+    return jsonify({"success": True, "proxy": public_proxy_dict(proxy)})
 
 
 @proxies_bp.route("/api/proxies", methods=["POST"])
@@ -337,6 +373,28 @@ def api_proxies_test(proxy_id):
     except Exception:
         db_session.rollback()
         return api_error("Proxy test failed", 502, "proxy_test_failed")
+
+
+@proxies_bp.route("/api/proxies/selection/delete", methods=["POST"])
+@login_required
+@require_permission("proxies.delete")
+def api_proxies_selection_delete():
+    db_session = get_db()
+    ids, error = _selection_ids(_json_object())
+    if error:
+        return api_error(error, 400, "invalid_selection")
+
+    query = apply_proxy_scope(db_session.query(Proxy)).filter(Proxy.id.in_(ids))
+    count = query.count()
+    if count == 0:
+        return api_error("No selected proxies are available", 404, "not_found")
+    try:
+        query.delete(synchronize_session=False)
+        db_session.commit()
+        return jsonify({"success": True, "deleted": count})
+    except Exception:
+        db_session.rollback()
+        return api_error("Could not delete selected proxies", 500, "proxy_delete_failed")
 
 
 @proxies_bp.route("/api/proxies/delete", methods=["POST"])

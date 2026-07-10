@@ -129,9 +129,9 @@ class InventoryRenderTest(unittest.TestCase):
                     sess['user_id'] = 0
                 res = client.get('/index?tab=proxies')
                 self.assertEqual(res.status_code, 200)
-                self.assertIn(b'inventory-overview', res.data)
+                self.assertIn(b'inventory-metrics', res.data)
                 self.assertIn(b'inventory-empty-state', res.data)
-                self.assertIn(b'Proxy Inventory', res.data)
+                self.assertIn(b'Inspect the proxies that can actually carry traffic.', res.data)
         finally:
             if getattr(db, 'Session', None) is not None:
                 db.Session.remove()

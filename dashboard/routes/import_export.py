@@ -190,11 +190,15 @@ def _apply_export_filters(query):
 
     if proto != "all" and proto in PROTOCOLS:
         query = query.filter(Proxy.protocol == proto)
-    if status != "all":
-        if status == "untested":
-            query = query.filter(or_(Proxy.status == "untested", Proxy.status.is_(None)))
-        else:
-            query = query.filter(Proxy.status == status)
+    if status and status != "all":
+        conditions = []
+        for value in [part.strip() for part in status.split(",") if part.strip()]:
+            if value == "untested":
+                conditions.append(or_(Proxy.status == "untested", Proxy.status.is_(None)))
+            else:
+                conditions.append(Proxy.status == value)
+        if conditions:
+            query = query.filter(or_(*conditions))
     if search:
         value = f"%{search}%"
         query = query.filter(
@@ -212,6 +216,14 @@ def _apply_export_filters(query):
         query = query.filter(Proxy.countryCode.like(f"%{country_filter}%"))
     if isp_filter:
         query = query.filter(Proxy.isp.like(f"%{isp_filter}%"))
+
+    capabilities = {item.strip() for item in request.args.get("capability", "").split(",") if item.strip()}
+    if "web_https" in capabilities:
+        query = query.filter(Proxy.web_https_ok.is_(True))
+    if "remote_dns" in capabilities:
+        query = query.filter(Proxy.remote_dns_ok.is_(True))
+    if "telegram" in capabilities:
+        query = query.filter(Proxy.telegram_ok.is_(True))
     return query
 
 

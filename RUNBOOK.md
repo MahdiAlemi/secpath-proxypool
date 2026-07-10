@@ -289,3 +289,32 @@ node --check dashboard/static/js/login.js
 ```
 
 This phase does not require a database migration, service restart, or deployment.
+
+## Phase 5 Inventory verification
+
+After applying the Inventory overlay, run:
+
+```bash
+bash scripts/health_check.sh
+bash scripts/repo_hygiene_check.sh
+python3 -m compileall -q dashboard tests
+node --check dashboard/static/js/base.js
+node --check dashboard/static/js/inventory.js
+node --check dashboard/static/js/shell.js
+node --check dashboard/static/js/login.js
+python3 -m unittest -v tests.test_inventory_ui
+git diff --check
+git status --short
+```
+
+The tests verify scoped proxy details, credential redaction, bounded selection deletion, grouped export filters, dedicated Inventory assets, and the compact page structure.
+
+### Local visual review
+
+Start the dashboard only when a local visual review is required:
+
+```bash
+bash scripts/run_dashboard.sh
+```
+
+Open `http://127.0.0.1:5003/index?tab=proxies` and check the table, filters, drawer, selection bar, and narrow viewport layout. This is a local operator check; applying the overlay does not start, restart, or deploy the application.

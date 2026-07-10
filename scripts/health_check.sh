@@ -18,8 +18,11 @@ python3 -m compileall -q config.py database.py dashboard proxy_monitor proxy_imp
 echo "[2/6] JavaScript syntax"
 if command -v node >/dev/null 2>&1; then
   node --check dashboard/static/js/base.js
+  node --check dashboard/static/js/inventory.js
+  node --check dashboard/static/js/shell.js
+  node --check dashboard/static/js/login.js
 else
-  echo "node not found; skipping JavaScript syntax check"
+  echo "node not found; skipping JavaScript syntax checks"
 fi
 
 echo "[3/6] Fresh database and application startup"

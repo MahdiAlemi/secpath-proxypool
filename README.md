@@ -165,3 +165,7 @@ Operational behavior and protocol boundaries are documented in [`docs/PROXY_SERV
 ## New dashboard foundation
 
 The dashboard now uses a responsive sidebar shell, a focused operational Cockpit, modular Jinja page templates, and a shared light/dark design system. See `docs/UI_FOUNDATION.md` for the phase boundary and migration structure.
+
+## Inventory workspace
+
+The proxy Inventory now uses a compact, responsive table with operational filters, explicit multi-selection, scoped bulk actions, and a detail drawer for progressive disclosure. Credential redaction and per-user proxy scope are enforced by the API rather than only by the browser. See [`docs/INVENTORY_UI.md`](docs/INVENTORY_UI.md).

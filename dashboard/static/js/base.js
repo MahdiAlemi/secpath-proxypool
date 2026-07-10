@@ -335,31 +335,20 @@ function hasPermission(perm) {
 }
 
 function applyTabPermissions() {
-  if (!hasPermission('proxies.view')) {
-    document.querySelectorAll('.nav-btn').forEach(function(btn) {
-      if (btn.textContent.includes('Proxies')) btn.style.display = 'none';
-    });
-    document.getElementById('tab-proxies')?.classList.add('hidden');
-  }
-  if (!hasPermission('proxies.import')) {
-    document.querySelectorAll('.nav-btn').forEach(function(btn) {
-      if (btn.textContent.includes('Import')) btn.style.display = 'none';
-    });
-  }
-  if (!hasPermission('monitor.view')) {
-    document.querySelectorAll('.nav-btn').forEach(function(btn) {
-      if (btn.textContent.includes('Monitor')) btn.style.display = 'none';
-    });
-  }
-  if (!hasPermission('server.view')) {
-    document.querySelectorAll('.nav-btn').forEach(function(btn) {
-      if (btn.textContent.includes('Server')) btn.style.display = 'none';
-    });
-  }
-  if (!hasPermission('stats.view')) {
-    document.querySelectorAll('.nav-btn').forEach(function(btn) {
-      if (btn.textContent.includes('Stats')) btn.style.display = 'none';
-    });
+  var toggleTab = function(tab, visible) {
+    var button = document.querySelector('.nav-btn[data-tab="' + tab + '"]');
+    if (button) button.style.display = visible ? '' : 'none';
+    if (!visible) document.getElementById('tab-' + tab)?.classList.add('hidden');
+  };
+
+  toggleTab('proxies', hasPermission('proxies.view'));
+  toggleTab('import', hasPermission('proxies.import'));
+  toggleTab('monitor', hasPermission('monitor.view'));
+  toggleTab('server', hasPermission('server.view'));
+  toggleTab('stats', hasPermission('stats.view'));
+
+  if (!hasPermission('proxies.add')) {
+    document.getElementById('topbar-add-proxy')?.style.setProperty('display', 'none');
   }
   if (!hasPermission('proxies.export')) {
     document.getElementById('btn-export-csv')?.style.setProperty('display', 'none');
@@ -377,9 +366,10 @@ function applyTabPermissions() {
     document.getElementById('auto-refresh-btn')?.style.setProperty('display', 'none');
   }
   if (!hasPermission('users.manage')) {
-    document.querySelector('.theme-toggle[onclick*="modal-users"]')?.style.setProperty('display', 'none');
+    document.querySelector('.sidebar-utility[onclick*="modal-users"]')?.style.setProperty('display', 'none');
   }
 }
+
 
 let selectedStatuses = ['alive', 'flaky', 'cooling', 'soft', 'revived', 'semi-revived', 'dead', 'untested'];
 let selectedCapabilities = [];
@@ -3209,11 +3199,6 @@ async function updateProxyFilterInfo() {
 initTheme();
 loadCurrentUserPermissions();
 updateImportModeSummary('url');
-loadUserProxyFilters();
-
-if (typeof userProxyFilters !== 'undefined' && (userProxyFilters.statuses.length > 0 || userProxyFilters.protocols.length > 0)) {
-  applyProxyFiltersToUI();
-}
 
 document.addEventListener('click', function(e) {
   var colsBtn = e.target.closest('button') && e.target.closest('button').getAttribute('onclick');
@@ -3223,13 +3208,4 @@ document.addEventListener('click', function(e) {
   }
 });
 
-var savedPageSize = localStorage.getItem('pageSize');
-if (savedPageSize) {
-  document.getElementById('page-size').value = savedPageSize;
-}
 loadCockpit();
-loadProxies().then(function() {
-  setTimeout(function() {
-    initColumns();
-  }, 100);
-});
