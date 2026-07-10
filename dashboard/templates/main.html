@@ -769,7 +769,23 @@ userProxyFilters = {{ proxy_filters | tojson }};
       <div class="modal-title">Add New Server</div>
       <button class="modal-close" onclick="closeModal('modal-add-server')">&times;</button>
     </div>
-    
+
+    <div class="server-wizard-steps" id="server-wizard-steps">
+      <button class="server-wizard-step active" type="button" onclick="setServerWizardStep(0)"><span>1</span><strong>Use case</strong><small>Preset & listener</small></button>
+      <button class="server-wizard-step" type="button" onclick="setServerWizardStep(1)"><span>2</span><strong>Routing</strong><small>Rotation & auth</small></button>
+      <button class="server-wizard-step" type="button" onclick="setServerWizardStep(2)"><span>3</span><strong>Filters</strong><small>Geo & network</small></button>
+      <button class="server-wizard-step" type="button" onclick="setServerWizardStep(3)"><span>4</span><strong>Review</strong><small>Preflight</small></button>
+    </div>
+
+    <div id="server-wizard-review" class="server-wizard-review" style="display:none">
+      <div class="review-header">
+        <div><strong>Profile review</strong><span>Check the generated profile and candidate pool before creating it.</span></div>
+        <button class="btn btn-sm" type="button" onclick="refreshServerCandidatePreview()">Refresh Preflight</button>
+      </div>
+      <div id="server-review-grid" class="server-review-grid"></div>
+      <div id="server-preview-result" class="server-preview-result"></div>
+    </div>
+
     <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
       <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Basic Settings</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
@@ -980,9 +996,11 @@ userProxyFilters = {{ proxy_filters | tojson }};
       </div>
     </div>
 
-    <div style="display:flex;gap:12px;margin-top:16px">
-      <button class="btn btn-primary" onclick="createServerProfile()">Create Profile</button>
-      <button class="btn" onclick="closeModal('modal-add-server')">Cancel</button>
+    <div class="server-wizard-footer">
+      <button class="btn" type="button" id="server-wizard-prev" onclick="serverWizardPrev()">Back</button>
+      <button class="btn btn-primary" type="button" id="server-wizard-next" onclick="serverWizardNext()">Next</button>
+      <button class="btn btn-success" type="button" id="server-wizard-submit" onclick="createServerProfile()" style="display:none">Create Profile</button>
+      <button class="btn" type="button" onclick="closeModal('modal-add-server')">Cancel</button>
     </div>
   </div>
 </div>

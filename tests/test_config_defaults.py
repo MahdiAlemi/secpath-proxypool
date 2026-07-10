@@ -38,5 +38,30 @@ class DiagnosticsEndpointTest(unittest.TestCase):
                 db.engine.dispose()
 
 
+class ServerPreviewEndpointTest(unittest.TestCase):
+    def test_server_preview_candidates_endpoint_shape(self):
+        from dashboard import create_app
+        from database import db
+        app = create_app()
+        app.config['TESTING'] = True
+        try:
+            with app.test_client() as client:
+                with client.session_transaction() as sess:
+                    sess['user'] = 'admin'
+                    sess['user_id'] = 0
+                res = client.post('/api/server/preview-candidates', json={'candidate_statuses': 'alive', 'require_web_https': True})
+                self.assertEqual(res.status_code, 200)
+                data = res.get_json()
+                self.assertTrue(data['success'])
+                self.assertIn('total', data)
+                self.assertIn('by_protocol', data)
+                self.assertIn('warnings', data)
+        finally:
+            if getattr(db, 'Session', None) is not None:
+                db.Session.remove()
+            if getattr(db, 'engine', None) is not None:
+                db.engine.dispose()
+
+
 if __name__ == '__main__':
     unittest.main()

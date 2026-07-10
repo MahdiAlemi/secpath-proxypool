@@ -65,6 +65,84 @@ def api_server_status():
         return jsonify({"error": str(e), "servers": {}})
 
 
+
+
+@server_bp.route("/api/server/preview-candidates", methods=["POST"])
+@login_required
+@require_permission("server.view")
+def api_server_preview_candidates():
+    """Preview how many proxies match a server profile before creating it."""
+    from sqlalchemy import or_
+    from database import db, Proxy
+
+    data = request.json or {}
+    with db.session() as session:
+        query = session.query(Proxy)
+
+        statuses = [x.strip() for x in str(data.get("candidate_statuses") or "alive").split(',') if x.strip()]
+        if statuses:
+            conditions = []
+            for st in statuses:
+                if st == "untested":
+                    conditions.append(or_(Proxy.status == "untested", Proxy.status.is_(None)))
+                else:
+                    conditions.append(Proxy.status == st)
+            query = query.filter(or_(*conditions))
+
+        if data.get("require_web_https"):
+            query = query.filter(Proxy.web_https_ok.is_(True))
+        if data.get("require_remote_dns"):
+            query = query.filter(Proxy.remote_dns_ok.is_(True))
+        if data.get("require_telegram"):
+            query = query.filter(Proxy.telegram_ok.is_(True))
+
+        if data.get("upstream_protocol"):
+            protocols = [p.strip() for p in str(data.get("upstream_protocol")).split(',') if p.strip()]
+            if protocols:
+                query = query.filter(Proxy.protocol.in_(protocols))
+
+        text_filters = {
+            "countryCodes": Proxy.countryCode,
+            "regions": Proxy.regionName,
+            "cities": Proxy.city,
+            "orgs": Proxy.org,
+            "isp": Proxy.isp,
+            "asn": Proxy.asn,
+            "continentCode": Proxy.continentCode,
+            "zip_codes": Proxy.zip,
+            "timezones": Proxy.timezone,
+        }
+        for key, col in text_filters.items():
+            raw = data.get(key)
+            if raw:
+                vals = [v.strip() for v in str(raw).split(',') if v.strip()]
+                if vals:
+                    query = query.filter(col.in_(vals))
+
+        bool_filters = {"mobile": Proxy.mobile, "proxy": Proxy.proxy, "hosting": Proxy.hosting}
+        for key, col in bool_filters.items():
+            raw = data.get(key)
+            if raw in ("true", "false"):
+                query = query.filter(col == (1 if raw == "true" else 0))
+
+        total = query.count()
+        by_protocol = {}
+        for proto in ["http", "https", "socks4", "socks5"]:
+            by_protocol[proto] = query.filter(Proxy.protocol == proto).count()
+
+        samples = [p.to_dict() for p in query.order_by(Proxy.cost.asc()).limit(5).all()]
+
+    warnings = []
+    if total == 0:
+        warnings.append("No proxies match this server profile. Loosen filters or run a monitor first.")
+    if data.get("require_telegram") and not data.get("require_remote_dns"):
+        warnings.append("Telegram preset usually needs remote DNS; consider requiring Remote DNS.")
+    if not data.get("require_web_https"):
+        warnings.append("HTTPS is not required. This is OK for HTTP scraping, but not recommended for web browsing.")
+
+    return jsonify({"success": True, "total": total, "by_protocol": by_protocol, "samples": samples, "warnings": warnings})
+
+
 @server_bp.route("/api/server/create", methods=["POST"])
 @login_required
 @require_permission("server.control")

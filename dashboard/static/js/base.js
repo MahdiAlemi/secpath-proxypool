@@ -449,6 +449,66 @@ function getCapabilityFilterParam() {
   return selectedCapabilities.join(',');
 }
 
+
+let serverWizardStep = 0;
+
+function getValSafe(id, def) {
+  var el = document.getElementById(id);
+  return el && el.value ? el.value : (def || '');
+}
+
+function collectServerFormData() {
+  return {
+    protocol: getValSafe('server-proto'), bind: getValSafe('server-bind', '0.0.0.0'), port: parseInt(getValSafe('server-port', '8080')),
+    rotate: getValSafe('server-rotate'), rotate_interval: parseInt(getValSafe('server-rotate-interval', '60')),
+    min_cost: parseFloat(getValSafe('server-min-cost', '0.0')), cost_threshold: getValSafe('server-cost') ? parseFloat(getValSafe('server-cost')) : null,
+    username: getValSafe('server-user'), password: getValSafe('server-pass'), auth_required: getValSafe('server-auth-required') || null,
+    certfile: getValSafe('server-certfile') || null, keyfile: getValSafe('server-keyfile') || null,
+    sticky_upstream: getValSafe('server-sticky-upstream') || null, insecure_upstream: getValSafe('server-insecure-upstream') === 'true', upstream_protocol: getValSafe('server-upstream-proto') || null,
+    candidate_statuses: getValSafe('server-candidate-statuses', 'alive') || 'alive',
+    require_web_https: getValSafe('server-require-web-https', 'true') === 'true', require_remote_dns: getValSafe('server-require-remote-dns', 'false') === 'true', require_telegram: getValSafe('server-require-telegram', 'false') === 'true',
+    countryCodes: getValSafe('server-country') || null, regions: getValSafe('server-regions') || null, cities: getValSafe('server-cities') || null, orgs: getValSafe('server-orgs') || null, isp: getValSafe('server-isp') || null, asn: getValSafe('server-asn') || null, continentCode: getValSafe('server-continent') || null, zip_codes: getValSafe('server-zip') || null, timezones: getValSafe('server-timezones') || null, mobile: getValSafe('server-mobile') || null, proxy: getValSafe('server-proxy') || null, hosting: getValSafe('server-hosting') || null
+  };
+}
+
+function initServerWizardSections() {
+  var modal = document.getElementById('modal-add-server');
+  if (!modal) return [];
+  var sections = Array.prototype.slice.call(modal.querySelectorAll('.modal-content > div[style*="background:var(--panel-light)"]'));
+  sections.forEach(function(sec, idx) { sec.classList.add('server-wizard-section'); sec.setAttribute('data-server-section', String(idx)); });
+  return sections;
+}
+
+function setServerWizardStep(step) {
+  serverWizardStep = Math.max(0, Math.min(3, step));
+  var sections = initServerWizardSections();
+  var showMap = {0: [0,4], 1: [1,2,3], 2: [5], 3: []};
+  sections.forEach(function(sec, idx) { sec.style.display = (showMap[serverWizardStep] || []).includes(idx) ? '' : 'none'; });
+  document.querySelectorAll('#server-wizard-steps .server-wizard-step').forEach(function(btn, idx) { btn.classList.toggle('active', idx === serverWizardStep); btn.classList.toggle('done', idx < serverWizardStep); });
+  var review = document.getElementById('server-wizard-review'); if (review) review.style.display = serverWizardStep === 3 ? '' : 'none';
+  var prev = document.getElementById('server-wizard-prev'); var next = document.getElementById('server-wizard-next'); var submit = document.getElementById('server-wizard-submit');
+  if (prev) prev.style.display = serverWizardStep === 0 ? 'none' : ''; if (next) next.style.display = serverWizardStep === 3 ? 'none' : ''; if (submit) submit.style.display = serverWizardStep === 3 ? '' : 'none';
+  if (serverWizardStep === 3) renderServerReview();
+}
+function serverWizardNext() { setServerWizardStep(serverWizardStep + 1); }
+function serverWizardPrev() { setServerWizardStep(serverWizardStep - 1); }
+function serverReviewItem(label, value) { return '<div class="server-review-item"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(value || '-') + '</strong></div>'; }
+function renderServerReview() {
+  var data = collectServerFormData(); var grid = document.getElementById('server-review-grid'); if (!grid) return;
+  grid.innerHTML = serverReviewItem('Use case', getValSafe('server-use-case', 'custom')) + serverReviewItem('Listener', data.protocol + '://' + data.bind + ':' + data.port) + serverReviewItem('Rotation', data.rotate + ' / ' + data.rotate_interval + 's') + serverReviewItem('Candidate statuses', data.candidate_statuses) + serverReviewItem('HTTPS required', data.require_web_https ? 'Yes' : 'No') + serverReviewItem('Remote DNS required', data.require_remote_dns ? 'Yes' : 'No') + serverReviewItem('Telegram required', data.require_telegram ? 'Yes' : 'No') + serverReviewItem('Geo filters', [data.countryCodes, data.regions, data.cities, data.isp].filter(Boolean).join(' / ') || 'None');
+  refreshServerCandidatePreview();
+}
+async function refreshServerCandidatePreview() {
+  var box = document.getElementById('server-preview-result'); if (!box) return; box.innerHTML = '<div class="server-preview-loading">Checking candidate pool...</div>';
+  try {
+    var res = await authFetch('/api/server/preview-candidates', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(collectServerFormData())});
+    var data = await res.json(); if (!data.success) throw new Error(data.error || 'Preview failed'); var proto = data.by_protocol || {};
+    var warnings = (data.warnings || []).map(function(w) { return '<li>' + escapeHtml(w) + '</li>'; }).join('');
+    var sample = (data.samples || []).map(function(p) { return '<span>' + escapeHtml(p.protocol + '://' + p.ip + ':' + p.port) + '</span>'; }).join('');
+    box.innerHTML = '<div class="server-preview-count"><strong>' + data.total + '</strong><span>matching candidates</span></div>' + '<div class="server-preview-breakdown">HTTP ' + (proto.http||0) + ' · HTTPS ' + (proto.https||0) + ' · SOCKS4 ' + (proto.socks4||0) + ' · SOCKS5 ' + (proto.socks5||0) + '</div>' + (warnings ? '<ul class="server-preview-warnings">' + warnings + '</ul>' : '<div class="server-preview-ok">Preflight looks good.</div>') + (sample ? '<div class="server-preview-samples">' + sample + '</div>' : '');
+  } catch (e) { box.innerHTML = '<div class="server-preview-error">Preflight failed: ' + escapeHtml(e.message || e) + '</div>'; }
+}
+
 function applyServerUseCase(mode) {
   var https = document.getElementById('server-require-web-https');
   var dns = document.getElementById('server-require-remote-dns');
@@ -2131,12 +2191,13 @@ async function showServerSettings(port) {
   document.getElementById('server-hosting').value = cfg.hosting || '';
   
   document.querySelector('#modal-add-server .modal-title').textContent = 'Edit Server Profile';
-  var createBtn = document.querySelector('#modal-add-server .btn-primary');
+  var createBtn = document.getElementById('server-wizard-submit');
   if (createBtn) {
     createBtn.textContent = 'Update Profile';
     createBtn.setAttribute('onclick', 'updateServerProfile()');
   }
   document.getElementById('modal-add-server').classList.add('active');
+  setServerWizardStep(0);
 }
 
 function showAddServerForm() {
@@ -2177,12 +2238,13 @@ function showAddServerForm() {
   document.getElementById('server-hosting').value = '';
   
   document.querySelector('#modal-add-server .modal-title').textContent = 'Add New Server Profile';
-  var createBtn = document.querySelector('#modal-add-server .btn-primary');
+  var createBtn = document.getElementById('server-wizard-submit');
   if (createBtn) {
     createBtn.textContent = 'Create Profile';
     createBtn.setAttribute('onclick', 'createServerProfile()');
   }
   document.getElementById('modal-add-server').classList.add('active');
+  setServerWizardStep(0);
 }
 
 function hideAddServerForm() {
@@ -2370,65 +2432,15 @@ async function stopServer(port) {
 }
 
 async function createServerProfile() {
-  function getVal(id, def) {
-    var el = document.getElementById(id);
-    return el && el.value ? el.value : (def || '');
-  }
-  
-  var data = {
-    protocol: getVal('server-proto'),
-    bind: getVal('server-bind', '0.0.0.0'),
-    port: parseInt(getVal('server-port', '8080')),
-    rotate: getVal('server-rotate'),
-    rotate_interval: parseInt(getVal('server-rotate-interval', '60')),
-    min_cost: parseFloat(getVal('server-min-cost', '0.0')),
-    cost_threshold: getVal('server-cost') ? parseFloat(getVal('server-cost')) : null,
-    username: getVal('server-user'),
-    password: getVal('server-pass'),
-    auth_required: getVal('server-auth-required') || null,
-    certfile: getVal('server-certfile') || null,
-    keyfile: getVal('server-keyfile') || null,
-    sticky_upstream: getVal('server-sticky-upstream') || null,
-    insecure_upstream: getVal('server-insecure-upstream') === 'true',
-    upstream_protocol: getVal('server-upstream-proto') || null,
-    candidate_statuses: getVal('server-candidate-statuses', 'alive') || 'alive',
-    require_web_https: getVal('server-require-web-https', 'true') === 'true',
-    require_remote_dns: getVal('server-require-remote-dns', 'false') === 'true',
-    require_telegram: getVal('server-require-telegram', 'false') === 'true',
-    countryCodes: getVal('server-country') || null,
-    regions: getVal('server-regions') || null,
-    cities: getVal('server-cities') || null,
-    orgs: getVal('server-orgs') || null,
-    isp: getVal('server-isp') || null,
-    asn: getVal('server-asn') || null,
-    continentCode: getVal('server-continent') || null,
-    zip_codes: getVal('server-zip') || null,
-    timezones: getVal('server-timezones') || null,
-    mobile: getVal('server-mobile') || null,
-    proxy: getVal('server-proxy') || null,
-    hosting: getVal('server-hosting') || null
-  };
-
+  var data = collectServerFormData();
   try {
-    var res = await authFetch('/api/server/create', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(data),
-      credentials: 'same-origin'
-    });
+    var res = await authFetch('/api/server/create', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data), credentials: 'same-origin'});
     var result = await res.json();
     console.log('Create server result:', result);
-
-    if (!result.success) {
-      showAlert('Error: ' + (result.error || 'Unknown error'));
-    } else {
-      hideAddServerForm();
-      showAlert('Server profile on port ' + result.port + ' created!');
-    }
+    if (!result.success) showAlert('Error: ' + (result.error || 'Unknown error'));
+    else { hideAddServerForm(); showAlert('Server profile on port ' + result.port + ' created!'); }
     setTimeout(checkServerStatus, 1000);
-  } catch(e) {
-    showAlert('Error: ' + e);
-  }
+  } catch(e) { showAlert('Error: ' + e); }
 }
 
 async function deleteServer(port) {
