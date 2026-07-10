@@ -5,7 +5,13 @@ from pathlib import Path
 
 import xlsxwriter
 
-from secpath_meta import DEVELOPER_CREDIT, PRODUCT_NAME, PUBLIC_SITE_NAME, VERSION_LABEL
+from secpath_meta import (
+    DEVELOPER_CREDIT,
+    PRODUCT_NAME,
+    PUBLIC_SITE_NAME,
+    REPOSITORY_LABEL,
+    VERSION_LABEL,
+)
 
 from .core import RankedProxy, ValidationSummary
 
@@ -204,7 +210,7 @@ def build_excel(
     about.write("A5", "Developer", label_format)
     about.write("B5", DEVELOPER_CREDIT, body_format)
     about.write("A6", "Project", label_format)
-    about.write_url("B6", repository_url, link_format, repository_url)
+    about.write_url("B6", repository_url, link_format, REPOSITORY_LABEL)
     about.write("A8", "Validation", label_format)
     about.write(
         "B8",

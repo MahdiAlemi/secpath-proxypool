@@ -18,6 +18,7 @@ from .core import (
 )
 from .excel import build_excel
 from .site import build_site
+from secpath_meta import REPOSITORY_URL
 
 FILENAMES = {
     "socks5": "top-20-socks5.xlsx",
@@ -59,8 +60,9 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("curl is required for proxy validation")
 
     generated_at = datetime.now(timezone.utc)
-    repository = os.environ.get("GITHUB_REPOSITORY", "MahdiAlemi/secpath-proxypool")
-    repository_url = os.environ.get("PUBLIC_MONITOR_REPOSITORY_URL", f"https://github.com/{repository}")
+    repository = os.environ.get("GITHUB_REPOSITORY")
+    detected_repository_url = f"https://github.com/{repository}" if repository else REPOSITORY_URL
+    repository_url = os.environ.get("PUBLIC_MONITOR_REPOSITORY_URL", detected_repository_url)
     seed = args.seed or generated_at.strftime("%Y-%m-%dT%H")
 
     work_dir = Path(args.work_dir)

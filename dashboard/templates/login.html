@@ -59,7 +59,11 @@
         {% if not auth_configured %}
           <p class="setup-note">No environment-backed account is configured. Use a database user or create one with <code>python3 scripts/create_admin.py</code>.</p>
         {% endif %}
-        <p class="login-footnote"><span>{{ product_name }} {{ product_version }}</span><span>{{ developer_credit }}</span></p>
+        <p class="login-footnote">
+          <span>{{ product_name }} {{ product_version }}</span>
+          <span>{{ developer_credit }}</span>
+          <a href="{{ repository_url }}" target="_blank" rel="noopener noreferrer">{{ repository_label }}</a>
+        </p>
       </div>
     </section>
   </main>

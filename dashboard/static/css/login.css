@@ -33,5 +33,7 @@ button:hover { border-color: var(--accent-hover); background: var(--accent-hover
 .setup-note { margin: 18px 0 0; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-light); color: var(--muted); font-size: 11px; line-height: 1.55; }
 .setup-note code { color: var(--text-strong); }
 .login-footnote { display: flex; justify-content: center; flex-wrap: wrap; gap: 5px 12px; margin: 22px 0 0; color: var(--muted); font-size: 10px; text-align: center; }
+.login-footnote a { color: inherit; text-decoration: none; border-bottom: 1px solid transparent; }
+.login-footnote a:hover { color: var(--text-strong); border-bottom-color: currentColor; }
 @media (max-width: 900px) { .login-shell { grid-template-columns: 1fr; }.login-visual { min-height: 280px; padding: 28px; }.login-message h1 { max-width: 620px; font-size: 38px; }.login-message p { margin-top: 12px; }.login-flow { display: none; }.login-panel { min-height: auto; padding: 42px 24px; } }
 @media (max-width: 520px) { .login-visual { min-height: 230px; padding: 22px; }.login-message h1 { font-size: 31px; }.login-message p { font-size: 12px; }.login-panel { padding: 34px 18px; } }

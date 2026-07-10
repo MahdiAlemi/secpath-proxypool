@@ -7,7 +7,13 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from secpath_meta import DEVELOPER_CREDIT, PRODUCT_NAME, PUBLIC_SITE_NAME, VERSION_LABEL
+from secpath_meta import (
+    DEVELOPER_CREDIT,
+    PRODUCT_NAME,
+    PUBLIC_SITE_NAME,
+    REPOSITORY_LABEL,
+    VERSION_LABEL,
+)
 
 from .core import ValidationSummary
 
@@ -174,6 +180,7 @@ def build_site(
   <footer>
     <span>{html.escape(PUBLIC_SITE_NAME)} {html.escape(VERSION_LABEL)}</span>
     <span>{html.escape(DEVELOPER_CREDIT)}</span>
+    <a href="{html.escape(repository_url)}" target="_blank" rel="noopener noreferrer">{html.escape(REPOSITORY_LABEL)}</a>
     <span>Updated automatically by GitHub Actions</span>
   </footer>
 </body>
@@ -187,6 +194,7 @@ def build_site(
         "site": PUBLIC_SITE_NAME,
         "version": VERSION_LABEL,
         "developer": DEVELOPER_CREDIT,
+        "repository": repository_url,
         "status": run_status,
         "checked": total_checked,
         "healthy": total_healthy,

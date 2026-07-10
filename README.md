@@ -5,6 +5,8 @@
 
   **A local-first control plane for importing, validating, analyzing, and serving proxy pools.**
 
+  **Repository:** [github.com/MahdiAlemi/secpath-proxypool](https://github.com/MahdiAlemi/secpath-proxypool)
+
   <p>
     <img alt="Version v1.0.0" src="https://img.shields.io/badge/version-v1.0.0-167C80">
     <img alt="Python 3.11+" src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white">
@@ -256,4 +258,4 @@ No open-source license has been selected yet. Add a `LICENSE` file before granti
 
 ---
 
-**SecPath ProxyPool v1.0.0** · Developed by **Mahdi Alemi**
+**SecPath ProxyPool v1.0.0** · Developed by **Mahdi Alemi** · [github.com/MahdiAlemi/secpath-proxypool](https://github.com/MahdiAlemi/secpath-proxypool)
