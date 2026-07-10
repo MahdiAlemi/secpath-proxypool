@@ -12,7 +12,7 @@ bad_patterns=(
   '*.pyc' '__pycache__/*' '*/__pycache__/*' '*.log' '*.pid' '*.db' '*.sqlite' '*.sqlite3'
   'progress/*.json' '.monitors.json' '.servers.json' '.server_config.json' '.runtime/*'
   '.monitors.json.lock' '.servers.json.lock' 'dashboard/.monitors.json' 'dashboard/.servers.json'
-  'PHASE*_NOTES.md' 'patch.py' 'patch.sh'
+  'PHASE*_NOTES.md' 'patch.py' 'patch.sh' 'public_site/*' '.public-monitor-work/*'
 )
 
 mapfile -t bad_paths < <(

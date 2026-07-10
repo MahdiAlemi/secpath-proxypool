@@ -169,7 +169,7 @@ printf '%s\n' '[6/8] Repository hygiene'
 bash scripts/repo_hygiene_check.sh
 
 printf '%s\n' '[7/8] Static analysis'
-ruff check dashboard proxy_importer proxy_monitor proxy_server tests scripts backup_utils.py migrate.py
+ruff check dashboard proxy_importer proxy_monitor proxy_server public_monitor tests scripts backup_utils.py migrate.py
 
 printf '%s\n' '[8/8] Git consistency'
 git diff --check

@@ -13,7 +13,7 @@ export DB_TYPE=sqlite
 export SQLITE_DB_PATH="$HEALTH_DB"
 
 echo "[1/6] Python compile"
-python3 -m compileall -q config.py database.py backup_utils.py migrate.py dashboard proxy_monitor proxy_importer proxy_server scripts tests
+python3 -m compileall -q config.py database.py backup_utils.py migrate.py dashboard proxy_monitor proxy_importer proxy_server public_monitor scripts tests
 
 echo "[2/6] JavaScript syntax"
 if command -v node >/dev/null 2>&1; then

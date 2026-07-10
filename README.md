@@ -126,6 +126,16 @@ The development dashboard binds to loopback by default. A non-loopback bind requ
 6. Create a listener in **Serving** using only the required protocols and capabilities.
 7. Use **Operations** for diagnostics, backups, restore, and guarded maintenance.
 
+## Public proxy export site
+
+The repository also includes a separate, static GitHub Pages showcase for `proxy.secpath.space`. A scheduled GitHub Actions workflow validates public candidates and publishes three Excel downloads:
+
+- Top 20 SOCKS5 proxies
+- Top 20 SOCKS4 proxies
+- Top 20 HTTP/HTTPS proxies
+
+The public page has no application API and does not expose endpoint lists in HTML or JSON. Proxy endpoints appear only inside the generated XLSX files. See [`docs/PUBLIC_PROXY_EXPORT.md`](docs/PUBLIC_PROXY_EXPORT.md) for workflow, DNS, ranking, and responsible-use details.
+
 ## Verification
 
 Run the complete disposable-database health suite:
@@ -212,6 +222,7 @@ See [`docs/SECURITY.md`](docs/SECURITY.md) for the complete security boundary.
 | [`docs/INSIGHTS_OPERATIONS_UI.md`](docs/INSIGHTS_OPERATIONS_UI.md) | Insights, Operations, and Access |
 | [`docs/LOCAL_RUNTIME.md`](docs/LOCAL_RUNTIME.md) | Local binding and secret rotation |
 | [`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md) | Backup, migration, and release checks |
+| [`docs/PUBLIC_PROXY_EXPORT.md`](docs/PUBLIC_PROXY_EXPORT.md) | Public GitHub Actions validation and Excel export site |
 
 ## Runtime files
 

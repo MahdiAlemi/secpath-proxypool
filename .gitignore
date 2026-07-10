@@ -73,3 +73,7 @@ Thumbs.db
 .runtime/
 .monitors.json.lock
 .servers.json.lock
+
+# Generated public monitor output
+public_site/
+.public-monitor-work/
