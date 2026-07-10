@@ -515,45 +515,68 @@ userProxyFilters = {{ proxy_filters | tojson }};
 
 <!-- SETTINGS MODAL -->
 <div id="modal-settings" class="modal">
-  <div class="modal-content">
+  <div class="modal-content operations-modal">
     <div class="modal-header">
-      <div class="modal-title">Settings</div>
+      <div>
+        <div class="modal-title">Operations Center</div>
+        <div class="section-hint">Manage dashboard access, database backups, diagnostics, cleanup, and destructive maintenance.</div>
+      </div>
       <button class="modal-close" onclick="closeModal('modal-settings')">&times;</button>
     </div>
-    <div class="form-group">
-      <label class="form-label">Dashboard Password</label>
-      <div style="display:flex;gap:12px">
-        <input type="password" id="new-password" class="form-input" placeholder="New password">
-        <button class="btn btn-primary" onclick="changePassword()">Update</button>
+
+    <div class="settings-ops-grid">
+      <div class="settings-op-card">
+        <div class="settings-op-title">Dashboard access</div>
+        <div class="settings-op-desc">Update the local dashboard password used for admin access.</div>
+        <div class="settings-inline-form">
+          <input type="password" id="new-password" class="form-input" placeholder="New password">
+          <button class="btn btn-primary" onclick="changePassword()">Update</button>
+        </div>
       </div>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Database</label>
-      <div style="display:flex;gap:12px;align-items:center">
-        <span id="db-info">MySQL - proxypool</span>
-        <button class="btn btn-sm" onclick="backupDB()">Export</button>
-        <button class="btn btn-sm" onclick="openImportModal()">Import</button>
+
+      <div class="settings-op-card">
+        <div class="settings-op-title">Database</div>
+        <div class="settings-op-desc">Export a backup or import an existing SQLite/MySQL backup file.</div>
+        <div class="settings-db-row">
+          <span id="db-info" class="settings-db-pill">SQLite</span>
+          <span id="settings-db-summary" class="settings-muted">Waiting for settings...</span>
+        </div>
+        <div class="settings-actions-row">
+          <button class="btn btn-sm" onclick="backupDB()">Export</button>
+          <button class="btn btn-sm" onclick="openImportModal()">Import</button>
+        </div>
       </div>
-    </div>
-    <div class="form-group" style="border-top:1px solid var(--panel-light);padding-top:16px;margin-top:16px">
-      <label class="form-label">Diagnostics / Preflight</label>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-        <button class="btn btn-sm" onclick="loadDiagnostics()">Refresh Diagnostics</button>
-        <span id="diagnostics-status" style="font-size:12px;color:var(--muted)">Open settings to load snapshot.</span>
-      </div>
-      <div id="diagnostics-panel" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:8px"></div>
-      <div id="diagnostics-recommendations" style="font-size:12px;color:var(--text);margin-top:8px;display:grid;gap:6px"></div>
     </div>
 
-    <div class="form-group" style="border-top:1px solid var(--panel-light);padding-top:16px;margin-top:16px">
-      <label class="form-label">Runtime Cleanup</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <div class="settings-section-card">
+      <div class="settings-section-header">
+        <div>
+          <div class="settings-op-title">Diagnostics / Preflight</div>
+          <div class="settings-op-desc">Check DB health, readiness counters, runtime files, and recommended next actions.</div>
+        </div>
+        <div class="settings-actions-row">
+          <button class="btn btn-sm" onclick="loadDiagnostics()">Refresh Diagnostics</button>
+          <span id="diagnostics-status" class="settings-muted">Open settings to load snapshot.</span>
+        </div>
+      </div>
+      <div id="diagnostics-panel" class="settings-diagnostics-grid"></div>
+      <div id="diagnostics-recommendations" class="settings-recommendations"></div>
+    </div>
+
+    <div class="settings-section-card">
+      <div class="settings-section-header">
+        <div>
+          <div class="settings-op-title">Runtime cleanup</div>
+          <div class="settings-op-desc">Cleanup actions do not delete the database. Normalize legacy statuses before re-validation.</div>
+        </div>
+      </div>
+      <div class="settings-actions-row">
         <button class="btn btn-sm" onclick="cleanupLogs()">Clear Logs</button>
         <button class="btn btn-sm" onclick="cleanupRuntimeFiles()">Clear Runtime Files</button>
         <button class="btn btn-sm btn-primary" onclick="cleanupLegacyStatuses()" title="Recommended after upgrading: reclassify old pre-Phase-5 revived rows so a monitor run re-validates them">⚡ Normalize Legacy Statuses</button>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-top:6px">Cleanup actions do not delete the database. Normalize fixes old pre-Phase-5 revived records.</div>
     </div>
+
     <div id="import-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000">
       <div style="background:var(--panel);padding:24px;border-radius:12px;max-width:400px;margin:100px auto">
         <h3>Import Database</h3>
@@ -574,38 +597,36 @@ userProxyFilters = {{ proxy_filters | tojson }};
         </div>
       </div>
     </div>
-    <div class="form-group" style="border-top:1px solid var(--panel-light);padding-top:16px;margin-top:16px">
-      <label class="form-label" style="color:var(--danger)">Danger Zone - Delete Proxies</label>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <select id="delete-protocol" class="form-input" style="width:auto;min-width:120px">
-            <option value="all">All Protocols</option>
-            <option value="http">HTTP</option>
-            <option value="https">HTTPS</option>
-            <option value="socks4">SOCKS4</option>
-            <option value="socks5">SOCKS5</option>
-          </select>
-          <select id="delete-status" class="form-input" style="width:auto;min-width:120px">
-            <option value="all">All Status</option>
-            <option value="alive">Alive Only</option>
-            <option value="flaky">Flaky Only</option>
-            <option value="cooling">Cooling Only</option>
-            <option value="soft">Soft Only</option>
-            <option value="revived">Revived Only</option>
-            <option value="semi-revived">Semi-Revived Only</option>
-            <option value="dead">Dead Only</option>
-            <option value="untested">Untested Only</option>
-          </select>
-          <button class="btn btn-danger" onclick="bulkDeleteProxies()">Delete Selected</button>
-        </div>
-        <div style="font-size:12px;color:var(--muted)">
-          This will permanently delete proxies matching the criteria above. This action cannot be undone.
+
+    <div class="settings-danger-zone">
+      <div class="settings-section-header">
+        <div>
+          <div class="settings-op-title">Danger zone</div>
+          <div class="settings-op-desc">Permanently delete proxies by protocol/status or use quick destructive cleanup actions.</div>
         </div>
       </div>
-    </div>
-    <div class="form-group">
-      <label class="form-label" style="color:var(--danger)">Quick Actions</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div class="settings-danger-controls">
+        <select id="delete-protocol" class="form-input">
+          <option value="all">All Protocols</option>
+          <option value="http">HTTP</option>
+          <option value="https">HTTPS</option>
+          <option value="socks4">SOCKS4</option>
+          <option value="socks5">SOCKS5</option>
+        </select>
+        <select id="delete-status" class="form-input">
+          <option value="all">All Status</option>
+          <option value="alive">Alive Only</option>
+          <option value="flaky">Flaky Only</option>
+          <option value="cooling">Cooling Only</option>
+          <option value="soft">Soft Only</option>
+          <option value="revived">Revived Only</option>
+          <option value="semi-revived">Semi-Revived Only</option>
+          <option value="dead">Dead Only</option>
+          <option value="untested">Untested Only</option>
+        </select>
+        <button class="btn btn-danger" onclick="bulkDeleteProxies()">Delete Selected</button>
+      </div>
+      <div class="settings-actions-row danger-actions">
         <button class="btn btn-sm btn-danger" onclick="clearDeadProxies()">Clear All Dead</button>
         <button class="btn btn-sm btn-danger" onclick="clearByProtocol('http')">Clear HTTP</button>
         <button class="btn btn-sm btn-danger" onclick="clearByProtocol('https')">Clear HTTPS</button>

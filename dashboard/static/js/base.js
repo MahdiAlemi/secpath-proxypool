@@ -2863,8 +2863,11 @@ async function loadSettings() {
   var data = await res.json();
   if (data.db_type === 'mysql') {
     document.getElementById('db-info').textContent = 'MySQL: ' + data.db_name;
+    setTextSafe('settings-db-summary', 'Production-style external database');
   } else {
-    document.getElementById('db-info').textContent = (data.db_path || data.sqlite_db_path || 'SQLite') + ' - ' + Number(data.db_size || 0).toFixed(2) + ' MB';
+    var sqliteLabel = (data.db_path || data.sqlite_db_path || 'SQLite') + ' - ' + Number(data.db_size || 0).toFixed(2) + ' MB';
+    document.getElementById('db-info').textContent = sqliteLabel;
+    setTextSafe('settings-db-summary', 'Local SQLite default');
   }
 }
 
@@ -2878,9 +2881,9 @@ function escapeHtml(text) {
 }
 
 function diagnosticCard(label, value, color) {
-  return '<div style="background:var(--panel-light);border:1px solid var(--border);border-radius:8px;padding:10px">' +
-    '<div style="font-size:11px;color:var(--muted);margin-bottom:4px">' + escapeHtml(label) + '</div>' +
-    '<div style="font-size:18px;font-weight:700;color:' + (color || 'var(--text)') + '">' + escapeHtml(value) + '</div>' +
+  return '<div class="settings-diagnostic-card">' +
+    '<div class="settings-diagnostic-label">' + escapeHtml(label) + '</div>' +
+    '<div class="settings-diagnostic-value" style="color:' + (color || 'var(--text)') + '">' + escapeHtml(value) + '</div>' +
     '</div>';
 }
 
