@@ -31,7 +31,7 @@ class FoundationRegressionTest(unittest.TestCase):
     def test_fresh_startup_creates_required_tables(self):
         tables = set(inspect(db.engine).get_table_names())
         self.assertTrue(
-            {"proxies", "users", "tokens", "monitor_sessions", "monitor_tested"}
+            {"proxies", "users", "tokens", "monitor_sessions", "monitor_tested", "import_sources", "import_runs"}
             <= tables
         )
 

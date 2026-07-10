@@ -35,6 +35,10 @@ The legacy UI deliberately does not prefill stored upstream credentials when edi
 
 Dashboard URL imports allow only public HTTP/HTTPS destinations. The application rejects localhost, private, link-local, multicast, reserved, unspecified, credential-bearing, oversized, and redirecting source URLs. It ignores ambient proxy environment variables and verifies that the connected peer matches the public addresses resolved during validation, reducing DNS-rebinding risk. Source bodies are capped at 2 MB and link configurations at 100 URLs.
 
+Preview and saved-source operations require `proxies.import`. Preview uses the same parser and public-fetch boundary as execution but does not modify Inventory or create an audit row. Samples redact proxy authentication. Saved-source collection responses omit URL/configuration data; full configuration is available only from the protected detail endpoint. Import history and source-level errors strip URL user information, query strings, and fragments before persistence or display.
+
+Saved source URLs or grouped configurations may still contain operator-owned access tokens in path components. Treat the application database and its backups as sensitive. The application does not expose these configurations in the general source list or import history, but an authorized source editor can retrieve them for editing.
+
 ## Server profiles and runtime identifiers
 
 Server profile ports, protocols, rotation modes, booleans, numeric bounds, and text lengths are validated before being written to runtime state. Server status responses redact listener usernames/passwords, and blank edit fields preserve existing listener credentials unless `clear_credentials=true` is explicitly submitted. Monitor IDs and server log ports are constrained before being used in filesystem paths.

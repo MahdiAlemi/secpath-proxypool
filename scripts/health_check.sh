@@ -19,6 +19,7 @@ echo "[2/6] JavaScript syntax"
 if command -v node >/dev/null 2>&1; then
   node --check dashboard/static/js/base.js
   node --check dashboard/static/js/inventory.js
+  node --check dashboard/static/js/sources.js
   node --check dashboard/static/js/shell.js
   node --check dashboard/static/js/login.js
 else
@@ -34,7 +35,7 @@ from database import db
 
 app = create_app()
 app.config["TESTING"] = True
-required = {"proxies", "users", "tokens", "monitor_sessions", "monitor_tested"}
+required = {"proxies", "users", "tokens", "monitor_sessions", "monitor_tested", "import_sources", "import_runs"}
 actual = set(inspect(db.engine).get_table_names())
 missing = required - actual
 assert not missing, f"missing tables: {sorted(missing)}"

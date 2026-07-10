@@ -318,3 +318,35 @@ bash scripts/run_dashboard.sh
 ```
 
 Open `http://127.0.0.1:5003/index?tab=proxies` and check the table, filters, drawer, selection bar, and narrow viewport layout. This is a local operator check; applying the overlay does not start, restart, or deploy the application.
+
+## Phase 6 Sources and Import verification
+
+After applying the Sources overlay, run:
+
+```bash
+bash scripts/health_check.sh
+bash scripts/repo_hygiene_check.sh
+python3 -m compileall -q dashboard tests database.py
+node --check dashboard/static/js/base.js
+node --check dashboard/static/js/inventory.js
+node --check dashboard/static/js/sources.js
+node --check dashboard/static/js/shell.js
+node --check dashboard/static/js/login.js
+python3 -m unittest -v tests.test_sources_ui
+git diff --check
+git status --short
+```
+
+The dedicated tests use a disposable SQLite database. They verify non-mutating preview, credential redaction, saved-source CRUD, disabled-source enforcement, partial grouped imports, sanitized history, and automatic creation of the `import_sources` and `import_runs` tables.
+
+### Local visual review
+
+Start the development dashboard only for a local review:
+
+```bash
+bash scripts/run_dashboard.sh
+```
+
+Open `http://127.0.0.1:5003/index?tab=import` and check all three input modes, preflight metrics, saved-source editing, recent history, dark mode, and a narrow viewport. Applying the overlay does not start or restart the application and is not a deployment.
+
+The first application startup after this phase creates two additive tables. Existing Proxy records are not modified. Database backups can contain saved source URLs or grouped configurations and must remain protected.

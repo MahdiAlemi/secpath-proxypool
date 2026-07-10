@@ -1,83 +1,202 @@
-<!-- IMPORT TAB -->
-    <div id="tab-import" class="tab-content {{ 'hidden' if tab!='import' else '' }}">
-      <div class="card import-center-card">
-        <div class="card-header import-center-header">
-          <div>
-            <div class="card-title">Source Center <span class="health-pill">Fresh inputs</span></div>
-            <div class="section-hint">Bring in raw proxies from URLs, grouped source configs, or manual lists before validation.</div>
-          </div>
-          <button class="btn btn-sm" onclick="showTab('monitor', event)">Validate after import</button>
-        </div>
-        <div class="import-source-overview">
-          <div class="import-source-card active" data-import-mode="url" onclick="showImportTab('url', event)"><strong>Single URL</strong><span>Fetch one proxy list with a selected protocol label.</span></div>
-          <div class="import-source-card" data-import-mode="links" onclick="showImportTab('links', event)"><strong>Source config</strong><span>Import multiple grouped URLs from INI-style config.</span></div>
-          <div class="import-source-card" data-import-mode="manual" onclick="showImportTab('manual', event)"><strong>Manual batch</strong><span>Paste or upload raw proxies for quick ingest.</span></div>
-        </div>
-        <div class="import-guidance">
-          <div><strong>Import checklist</strong><span>Count first when possible, import, then run Validation Center to qualify HTTPS/DNS/Telegram readiness.</span></div>
-          <div id="import-mode-summary">Mode: Single URL · Best for one fresh public list.</div>
-        </div>
-        <div class="tabs import-mode-tabs">
-          <button class="tab-btn active" onclick="showImportTab('url', event)">From URL</button>
-          <button class="tab-btn" onclick="showImportTab('links', event)">From Links Config</button>
-          <button class="tab-btn" onclick="showImportTab('manual', event)">Manual Entry</button>
-        </div>
+<!-- SOURCES TAB -->
+<div id="tab-import" class="tab-content {{ 'hidden' if tab!='import' else '' }}">
+  <section class="page-heading source-page-heading">
+    <div>
+      <span class="page-kicker">Source intake</span>
+      <h2>Build the pool from trusted inputs.</h2>
+      <p>Inspect candidates before they touch inventory, then keep repeatable sources ready for the next refresh.</p>
+    </div>
+    <button class="btn" type="button" data-source-refresh>
+      <span aria-hidden="true">↻</span> Refresh workspace
+    </button>
+  </section>
 
-        <div id="import-url" class="import-panel">
-          <div class="form-group">
-            <label class="form-label">Protocol</label>
-            <select id="import-url-proto" class="form-input" style="width:auto">
+  <div class="source-workbench">
+    <section class="surface source-composer" aria-labelledby="source-composer-title">
+      <div class="surface-header source-composer-header">
+        <div>
+          <span class="section-eyebrow">New intake</span>
+          <h3 id="source-composer-title">Choose an input</h3>
+        </div>
+        <span class="source-step">Step 1 of 2</span>
+      </div>
+
+      <div class="source-mode-switch" role="tablist" aria-label="Import input type">
+        <button class="source-mode-button active" type="button" role="tab" aria-selected="true" data-source-mode="manual">
+          <span class="source-mode-icon" aria-hidden="true">⌁</span>
+          <strong>Paste or file</strong>
+          <small>Private lists and quick batches</small>
+        </button>
+        <button class="source-mode-button" type="button" role="tab" aria-selected="false" data-source-mode="url">
+          <span class="source-mode-icon" aria-hidden="true">↗</span>
+          <strong>Single URL</strong>
+          <small>One public list with a protocol</small>
+        </button>
+        <button class="source-mode-button" type="button" role="tab" aria-selected="false" data-source-mode="links">
+          <span class="source-mode-icon" aria-hidden="true">≡</span>
+          <strong>Source config</strong>
+          <small>Grouped recurring URLs</small>
+        </button>
+      </div>
+
+      <div class="source-form-panel" data-source-panel="manual">
+        <div class="source-field-row">
+          <label class="field-label" for="source-manual-protocol">Default protocol</label>
+          <select id="source-manual-protocol" class="form-input compact-input">
+            <option value="http">HTTP</option>
+            <option value="https">HTTPS</option>
+            <option value="socks4">SOCKS4</option>
+            <option value="socks5">SOCKS5</option>
+          </select>
+        </div>
+        <label class="file-drop" for="source-manual-file">
+          <input id="source-manual-file" type="file" accept=".txt,.json,.csv" hidden>
+          <span class="file-drop-icon" aria-hidden="true">⇧</span>
+          <span><strong>Choose a text file</strong><small>or paste the list below · maximum 2 MB</small></span>
+        </label>
+        <label class="field-label" for="source-manual-content">Proxy candidates</label>
+        <textarea id="source-manual-content" class="form-input source-editor" spellcheck="false" placeholder="http 192.0.2.10:8080&#10;socks5://user:pass@198.51.100.8:1080&#10;203.0.113.20:3128"></textarea>
+        <p class="field-help">Embedded protocol and authentication are detected automatically. Credentials never appear in preview samples.</p>
+      </div>
+
+      <div class="source-form-panel hidden" data-source-panel="url">
+        <div class="source-field-row source-url-row">
+          <div>
+            <label class="field-label" for="source-url-protocol">Protocol label</label>
+            <select id="source-url-protocol" class="form-input compact-input">
               <option value="http">HTTP</option>
               <option value="https">HTTPS</option>
               <option value="socks4">SOCKS4</option>
               <option value="socks5">SOCKS5</option>
             </select>
           </div>
-          <div class="form-group">
-            <label class="form-label">Proxy List URL</label>
-            <input type="text" id="import-url-input" class="form-input" placeholder="https://raw.githubusercontent.com/..." oninput="clearImportCount('url')">
+          <div class="source-url-field">
+            <label class="field-label" for="source-url-input">Public list URL</label>
+            <input id="source-url-input" class="form-input" type="url" autocomplete="off" placeholder="https://example.org/proxies.txt">
           </div>
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-            <button class="btn btn-sm" onclick="countImportUrl()">Count</button>
-            <span id="import-url-count" style="font-size:12px;color:var(--muted)"></span>
-          </div>
-          <button class="btn btn-primary" id="import-url-btn" onclick="doImportUrl()">Import</button>
         </div>
-
-        <div id="import-links" class="import-panel hidden">
-          <div class="form-group">
-            <label class="form-label">Upload File (.ini)</label>
-            <input type="file" id="import-links-file" class="form-input" accept=".ini,.txt" onchange="handleLinksFileUpload()">
-            <div style="font-size:11px;color:var(--muted);margin-top:4px">Or paste below:</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Links Config (INI format)</label>
-            <textarea id="import-links-content" class="form-input" placeholder="[http]&#10;https://...&#10;[socks5]&#10;https://..." oninput="clearImportCount('links')"></textarea>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-            <button class="btn btn-sm" onclick="countImportLinks()">Count</button>
-            <span id="import-links-count" style="font-size:12px;color:var(--muted)"></span>
-          </div>
-          <button class="btn btn-primary" id="import-links-btn" onclick="doImportLinks()">Import</button>
-        </div>
-
-        <div id="import-manual" class="import-panel hidden">
-          <div class="form-group">
-            <label class="form-label">Upload File (txt/json)</label>
-            <input type="file" id="import-manual-file" class="form-input" accept=".txt,.json" onchange="handleManualFileUpload()">
-            <div style="font-size:11px;color:var(--muted);margin-top:4px">Or enter below:</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Proxies (one per line, format: protocol ip:port [user] [pass])</label>
-            <textarea id="import-manual-content" class="form-input" placeholder="http 192.168.1.1:8080&#10;socks5 10.0.0.1:1080 user pass" oninput="clearImportCount('manual')"></textarea>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-            <button class="btn btn-sm" onclick="countImportManual()">Count</button>
-            <span id="import-manual-count" style="font-size:12px;color:var(--muted)"></span>
-          </div>
-          <button class="btn btn-primary" id="import-manual-btn" onclick="doImportManual()">Import</button>
-        </div>
-
-        <div id="import-result" class="form-group" style="margin-top:16px"></div>
+        <div class="source-safety-note"><span aria-hidden="true">◈</span><div><strong>Safe fetching is enforced.</strong><p>Private, loopback, reserved and redirected destinations are blocked before content is read.</p></div></div>
       </div>
+
+      <div class="source-form-panel hidden" data-source-panel="links">
+        <label class="file-drop" for="source-links-file">
+          <input id="source-links-file" type="file" accept=".ini,.txt" hidden>
+          <span class="file-drop-icon" aria-hidden="true">⇧</span>
+          <span><strong>Choose an INI source file</strong><small>up to 100 URLs grouped by protocol</small></span>
+        </label>
+        <label class="field-label" for="source-links-content">Grouped source configuration</label>
+        <textarea id="source-links-content" class="form-input source-editor source-config-editor" spellcheck="false" placeholder="[http]&#10;https://example.org/http.txt&#10;&#10;[socks5]&#10;https://example.org/socks5.txt"></textarea>
+        <p class="field-help">Supported sections: <code>[http]</code>, <code>[https]</code>, <code>[socks4]</code>, and <code>[socks5]</code>.</p>
+      </div>
+
+      <div class="source-composer-actions">
+        <button class="btn btn-primary" type="button" data-source-preview-button>
+          <span aria-hidden="true">◎</span> Preview candidates
+        </button>
+        <button class="btn" type="button" data-source-save-button hidden>Save as source</button>
+        <button class="button-link" type="button" data-source-reset>Clear input</button>
+      </div>
+    </section>
+
+    <section class="surface source-preview" aria-labelledby="source-preview-title">
+      <div class="surface-header">
+        <div>
+          <span class="section-eyebrow">Preflight</span>
+          <h3 id="source-preview-title">Review before import</h3>
+        </div>
+        <span class="source-step">Step 2 of 2</span>
+      </div>
+
+      <div class="source-preview-empty" data-source-preview-empty>
+        <div class="preview-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
+        <strong>No preview yet</strong>
+        <p>Choose an input and run preview. Nothing is written to inventory during this step.</p>
+      </div>
+
+      <div class="source-preview-result hidden" data-source-preview-result>
+        <div class="source-preview-status" data-source-preview-status></div>
+        <div class="source-metric-grid">
+          <div class="source-metric source-metric-new"><span>New candidates</span><strong data-preview-new>0</strong><small>ready to add</small></div>
+          <div class="source-metric"><span>Already stored</span><strong data-preview-existing>0</strong><small>will be skipped</small></div>
+          <div class="source-metric"><span>Invalid</span><strong data-preview-invalid>0</strong><small>could not normalize</small></div>
+          <div class="source-metric"><span>Input duplicates</span><strong data-preview-duplicates>0</strong><small>collapsed safely</small></div>
+        </div>
+        <div class="source-preview-section">
+          <div class="source-preview-section-title"><strong>Protocol mix</strong><span data-preview-total></span></div>
+          <div class="protocol-mix" data-preview-protocols></div>
+        </div>
+        <div class="source-preview-section">
+          <div class="source-preview-section-title"><strong>Normalized sample</strong><span>Credentials hidden</span></div>
+          <div class="candidate-sample-list" data-preview-samples></div>
+        </div>
+        <div class="source-preview-section hidden" data-preview-sources-wrap>
+          <div class="source-preview-section-title"><strong>Source checks</strong><span data-preview-source-count></span></div>
+          <div class="source-check-list" data-preview-sources></div>
+        </div>
+        <div class="source-preview-actions">
+          <div><strong data-preview-action-title>Ready to import</strong><p data-preview-action-copy>Only new candidates will be written.</p></div>
+          <button class="btn btn-primary" type="button" data-source-import-button disabled>Import new candidates</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="surface source-library" aria-labelledby="source-library-title">
+    <div class="surface-header source-library-header">
+      <div><span class="section-eyebrow">Repeatable inputs</span><h3 id="source-library-title">Saved sources</h3></div>
+      <span class="surface-count" data-source-library-count>0 sources</span>
     </div>
+    <div class="source-library-list" data-source-library-list>
+      <div class="source-list-placeholder">Loading saved sources…</div>
+    </div>
+  </section>
+
+  <section class="surface source-history" aria-labelledby="source-history-title">
+    <div class="surface-header source-library-header">
+      <div><span class="section-eyebrow">Audit trail</span><h3 id="source-history-title">Recent imports</h3></div>
+      <span class="surface-count">Latest 20 runs</span>
+    </div>
+    <div class="source-history-table-wrap">
+      <table class="source-history-table">
+        <thead><tr><th>Started</th><th>Source</th><th>Result</th><th>Added</th><th>Skipped</th><th>Protocol mix</th></tr></thead>
+        <tbody data-source-history-body><tr><td colspan="6" class="table-empty">Loading import history…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="source-dialog-backdrop hidden" data-source-dialog-backdrop>
+    <section class="source-dialog" role="dialog" aria-modal="true" aria-labelledby="source-dialog-title">
+      <div class="source-dialog-header">
+        <div><span class="section-eyebrow">Saved source</span><h3 id="source-dialog-title">Save source</h3></div>
+        <button class="icon-button" type="button" aria-label="Close source editor" data-source-dialog-close>×</button>
+      </div>
+      <input type="hidden" id="source-dialog-id">
+      <label class="field-label" for="source-dialog-name">Source name</label>
+      <input id="source-dialog-name" class="form-input" maxlength="100" placeholder="Daily HTTP list">
+      <div class="source-dialog-config" data-source-dialog-url-fields>
+        <div>
+          <label class="field-label" for="source-dialog-protocol">Protocol</label>
+          <select id="source-dialog-protocol" class="form-input">
+            <option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks4">SOCKS4</option><option value="socks5">SOCKS5</option>
+          </select>
+        </div>
+        <div class="source-dialog-url-field">
+          <label class="field-label" for="source-dialog-url">Public list URL</label>
+          <input id="source-dialog-url" class="form-input" type="url" autocomplete="off">
+        </div>
+      </div>
+      <div class="source-dialog-config hidden" data-source-dialog-links-fields>
+        <div class="source-dialog-config-full">
+          <label class="field-label" for="source-dialog-content">Grouped source configuration</label>
+          <textarea id="source-dialog-content" class="form-input source-dialog-editor" spellcheck="false"></textarea>
+        </div>
+      </div>
+      <label class="source-toggle"><input id="source-dialog-active" type="checkbox" checked><span>Source is active and can be run</span></label>
+      <div class="source-dialog-summary" data-source-dialog-summary></div>
+      <div class="source-dialog-actions">
+        <button class="btn" type="button" data-source-dialog-close>Cancel</button>
+        <button class="btn btn-primary" type="button" data-source-dialog-submit>Save source</button>
+      </div>
+    </section>
+  </div>
+</div>

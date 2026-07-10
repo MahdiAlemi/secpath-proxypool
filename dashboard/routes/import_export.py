@@ -1,29 +1,36 @@
 import csv
 import io
-from typing import Iterable
+from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 import requests
 from flask import Blueprint, Response, g, jsonify, request
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 
 from dashboard.config import PROTOCOLS
 from dashboard.decorators import has_permission, login_required, require_permission
+from dashboard.imports import (
+    MAX_SOURCE_CONFIG_BYTES,
+    ImportInputError,
+    execute_import,
+    parse_link_config,
+    preview_import,
+)
 from dashboard.proxy_scope import (
     SAFE_FILTER_COLUMNS,
     apply_proxy_scope,
     credential_proxy_dict,
     public_proxy_dict,
 )
-from dashboard.security import api_error, resolve_public_http_url, validate_public_peer
-from database import Proxy
-from proxy_importer.utils.importer import normalize_proxy_line
+from dashboard.security import api_error
+from database import ImportRun, ImportSource, Proxy
 
 import_export_bp = Blueprint("import_export", __name__)
 
-_MAX_SOURCE_BYTES = 2_000_000
-_MAX_SOURCE_URLS = 100
-_MAX_IMPORT_LINES = 100_000
+
+def utcnow():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def get_db():
@@ -39,145 +46,154 @@ def _json_object():
     return value if isinstance(value, dict) else None
 
 
-def _response_peer_ip(response) -> str:
-    """Best-effort extraction of the connected socket peer from requests/urllib3."""
-    raw = response.raw
-    connections = [
-        getattr(raw, "_connection", None),
-        getattr(raw, "connection", None),
-    ]
-    for connection in connections:
-        sock = getattr(connection, "sock", None)
-        if sock is not None:
-            return sock.getpeername()[0]
-
-    # urllib3 may hand the socket through the wrapped http.client response.
-    wrapped = getattr(getattr(getattr(raw, "_fp", None), "fp", None), "raw", None)
-    sock = getattr(wrapped, "_sock", None)
-    if sock is not None:
-        return sock.getpeername()[0]
-    raise ValueError("Could not verify the source connection peer")
+def _source_import_data(source: ImportSource) -> dict:
+    if source.mode == "url":
+        return {
+            "mode": "url",
+            "protocol": source.protocol or "http",
+            "url": source.source_url or "",
+        }
+    return {"mode": "links", "content": source.source_content or ""}
 
 
-def _fetch_public_text(url: str) -> str:
-    safe_url, resolved_ips = resolve_public_http_url(url)
-    client = requests.Session()
-    client.trust_env = False  # Ignore ambient HTTP(S)_PROXY values for SSRF checks.
-    response = None
+def _validate_http_url(value: str) -> str:
+    value = str(value or "").strip()
+    if len(value) > 2048:
+        raise ImportInputError("Source URL is too long")
     try:
-        response = client.get(
-            safe_url,
-            timeout=(5, 20),
-            allow_redirects=False,
-            stream=True,
-            headers={"User-Agent": "ProxyPool-SourceFetcher/1.0"},
-        )
-        validate_public_peer(_response_peer_ip(response), resolved_ips)
-        if 300 <= response.status_code < 400:
-            raise ValueError("Source redirects are blocked; use the final public URL")
-        response.raise_for_status()
-
-        content_length = response.headers.get("Content-Length")
-        if content_length:
-            try:
-                declared_size = int(content_length)
-            except (TypeError, ValueError):
-                declared_size = None
-            if declared_size is not None and declared_size > _MAX_SOURCE_BYTES:
-                raise ValueError("Source response is larger than 2 MB")
-
-        chunks = []
-        size = 0
-        for chunk in response.iter_content(chunk_size=64 * 1024):
-            if not chunk:
-                continue
-            size += len(chunk)
-            if size > _MAX_SOURCE_BYTES:
-                raise ValueError("Source response is larger than 2 MB")
-            chunks.append(chunk)
-        encoding = response.encoding or "utf-8"
-        return b"".join(chunks).decode(encoding, errors="replace")
-    finally:
-        if response is not None:
-            response.close()
-        client.close()
+        parsed = urlsplit(value)
+    except ValueError as exc:
+        raise ImportInputError("Source URL is invalid") from exc
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        raise ImportInputError("Source URL must use HTTP or HTTPS")
+    return value
 
 
-def _parse_link_config(content: str) -> list[tuple[str, str]]:
-    protocol = None
-    sources = []
-    for raw in content.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or line.startswith(";"):
-            continue
-        if line.startswith("[") and line.endswith("]"):
-            candidate = line[1:-1].strip().lower()
-            protocol = candidate if candidate in PROTOCOLS else None
-            continue
-        if protocol:
-            sources.append((protocol, line))
-            if len(sources) > _MAX_SOURCE_URLS:
-                raise ValueError(f"At most {_MAX_SOURCE_URLS} source URLs are allowed")
-    return sources
+def _boolean_value(value, default=True):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1", "yes", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "off"}:
+        return False
+    raise ImportInputError("is_active must be a boolean")
 
 
-def _proxy_payload(line: str, default_protocol: str):
-    parsed = normalize_proxy_line(line, default_protocol)
-    if not parsed:
-        return None
-    protocol, host, port, username, password = parsed
-    protocol = str(protocol or "").lower()
-    host = str(host or "").strip()
-    if protocol not in PROTOCOLS or not host or len(host) > 255:
-        return None
-    if any(char.isspace() for char in host):
-        return None
-    try:
-        port = int(port)
-    except (TypeError, ValueError):
-        return None
-    if not 1 <= port <= 65535:
-        return None
-    username = str(username or "")
-    password = str(password or "")
-    if len(username) > 255 or len(password) > 255:
-        return None
-    return {
-        "protocol": protocol,
-        "ip": host,
-        "port": port,
-        "username": username,
-        "password": password,
+def _source_fields(data: dict) -> dict:
+    name = str(data.get("name", "")).strip()
+    if not 2 <= len(name) <= 100:
+        raise ImportInputError("Source name must contain 2 to 100 characters")
+    mode = str(data.get("mode", "url")).strip().lower()
+    if mode not in {"url", "links"}:
+        raise ImportInputError("Saved sources must use url or links mode")
+
+    fields = {
+        "name": name,
+        "mode": mode,
+        "protocol": None,
+        "source_url": None,
+        "source_content": None,
+        "is_active": _boolean_value(data.get("is_active"), True),
     }
+    if mode == "url":
+        protocol = str(data.get("protocol", "http")).lower()
+        if protocol not in PROTOCOLS:
+            raise ImportInputError("Invalid protocol")
+        fields["protocol"] = protocol
+        fields["source_url"] = _validate_http_url(data.get("url", ""))
+    else:
+        content = str(data.get("content", ""))
+        if not content.strip():
+            raise ImportInputError("Source configuration is required")
+        if len(content.encode("utf-8")) > MAX_SOURCE_CONFIG_BYTES:
+            raise ImportInputError("Source configuration is too large")
+        sources = parse_link_config(content)
+        if not sources:
+            raise ImportInputError("No valid source URLs found")
+        for _protocol, url in sources:
+            _validate_http_url(url)
+        fields["source_content"] = content
+    return fields
 
 
-def _import_lines(db_session, protocol: str, lines: Iterable[str]):
-    added = 0
-    skipped = 0
-    seen = set()
-    for index, raw in enumerate(lines):
-        if index >= _MAX_IMPORT_LINES:
-            skipped += 1
-            break
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        payload = _proxy_payload(line, protocol)
-        if not payload:
-            skipped += 1
-            continue
-        key = tuple(payload[field] for field in ("protocol", "ip", "port", "username", "password"))
-        if key in seen:
-            skipped += 1
-            continue
-        seen.add(key)
-        exists = db_session.query(Proxy.id).filter_by(**payload).first()
-        if exists:
-            skipped += 1
-            continue
-        db_session.add(Proxy(**payload, cost=1.0))
-        added += 1
-    return added, skipped
+def _source_by_id(db_session, source_id: int):
+    return db_session.query(ImportSource).filter_by(id=source_id).first()
+
+
+def _run_record(result: dict, *, source=None, source_name=None) -> ImportRun:
+    summary = result.get("summary", {})
+    return ImportRun(
+        source_id=source.id if source else None,
+        source_name=(source.name if source else source_name) or None,
+        mode=result.get("mode", "manual"),
+        status=result.get("status", "completed"),
+        total=summary.get("total_lines", 0),
+        valid=summary.get("valid", 0),
+        added=summary.get("added", 0),
+        skipped=summary.get("skipped", 0),
+        existing=summary.get("existing", 0),
+        invalid=summary.get("invalid", 0),
+        input_duplicates=summary.get("input_duplicates", 0),
+        protocol_counts=result.get("protocols", {}),
+        source_results=result.get("sources", []),
+        error="; ".join(result.get("errors", [])[:5]) or None,
+        created_by=g.get("user_id"),
+        started_at=utcnow(),
+        completed_at=utcnow(),
+    )
+
+
+def _failed_run(db_session, *, mode, error, source=None, source_name=None):
+    run = ImportRun(
+        source_id=source.id if source else None,
+        source_name=(source.name if source else source_name) or None,
+        mode=mode,
+        status="failed",
+        error=str(error)[:2000],
+        created_by=g.get("user_id"),
+        started_at=utcnow(),
+        completed_at=utcnow(),
+    )
+    db_session.add(run)
+    if source:
+        source.last_run_at = utcnow()
+        source.last_status = "failed"
+        source.last_added = 0
+        source.last_skipped = 0
+        source.last_error = str(error)[:2000]
+    db_session.commit()
+    return run
+
+
+def _perform_import(db_session, data: dict, *, source=None, source_name=None):
+    result = execute_import(db_session, data)
+    summary = result["summary"]
+    if summary.get("valid", 0) == 0 and result.get("errors"):
+        raise ImportInputError("No source could be imported: " + result["errors"][0])
+
+    run = _run_record(result, source=source, source_name=source_name)
+    db_session.add(run)
+    if source:
+        source.last_run_at = utcnow()
+        source.last_status = result.get("status", "completed")
+        source.last_added = summary.get("added", 0)
+        source.last_skipped = summary.get("skipped", 0)
+        source.last_error = "; ".join(result.get("errors", [])[:5]) or None
+    db_session.commit()
+    result.update(
+        {
+            "success": True,
+            "run_id": run.id,
+            "added": summary.get("added", 0),
+            "skipped": summary.get("skipped", 0),
+        }
+    )
+    return result
 
 
 def _apply_export_filters(query):
@@ -236,6 +252,23 @@ def _csv_value(value):
     return text
 
 
+@import_export_bp.route("/api/import/preview", methods=["POST"])
+@login_required
+@require_permission("proxies.import")
+def api_import_preview():
+    data = _json_object()
+    if data is None:
+        return api_error("A JSON object is required", 400, "invalid_json")
+    try:
+        result = preview_import(get_db(), data)
+        result["success"] = True
+        return jsonify(result)
+    except (requests.RequestException, ImportInputError, ValueError) as exc:
+        return api_error(str(exc), 400, "import_preview_failed")
+    except Exception:
+        return api_error("Could not preview import", 500, "import_preview_failed")
+
+
 @import_export_bp.route("/api/import", methods=["POST"])
 @login_required
 @require_permission("proxies.import")
@@ -243,45 +276,16 @@ def api_import():
     data = _json_object()
     if data is None:
         return api_error("A JSON object is required", 400, "invalid_json")
-    mode = str(data.get("mode", ""))
     db_session = get_db()
-
     try:
-        if mode == "manual":
-            content = str(data.get("proxies", ""))
-            if len(content.encode("utf-8")) > _MAX_SOURCE_BYTES:
-                return api_error("Manual import is larger than 2 MB", 413, "payload_too_large")
-            added, skipped = _import_lines(db_session, "http", content.splitlines())
-        elif mode == "url":
-            protocol = str(data.get("protocol", "http")).lower()
-            if protocol not in PROTOCOLS:
-                return api_error("Invalid protocol", 400, "invalid_protocol")
-            text = _fetch_public_text(str(data.get("url", "")))
-            added, skipped = _import_lines(db_session, protocol, text.splitlines())
-        elif mode == "links":
-            content = str(data.get("content", ""))
-            if len(content.encode("utf-8")) > 128_000:
-                return api_error("Source configuration is too large", 413, "payload_too_large")
-            sources = _parse_link_config(content)
-            if not sources:
-                return api_error("No valid source URLs found", 400, "invalid_sources")
-            added = skipped = 0
-            for protocol, url in sources:
-                text = _fetch_public_text(url)
-                source_added, source_skipped = _import_lines(db_session, protocol, text.splitlines())
-                added += source_added
-                skipped += source_skipped
-        else:
-            return api_error("mode must be manual, url, or links", 400, "invalid_mode")
-
-        db_session.commit()
-        return jsonify({"success": True, "added": added, "skipped": skipped})
+        source_name = str(data.get("source_name", "")).strip()[:100] or None
+        return jsonify(_perform_import(db_session, data, source_name=source_name))
     except IntegrityError:
         db_session.rollback()
         return api_error("Import contained conflicting rows", 409, "duplicate_proxy")
-    except (requests.RequestException, ValueError) as exc:
+    except (requests.RequestException, ImportInputError, ValueError) as exc:
         db_session.rollback()
-        return api_error(str(exc), 400, "source_fetch_failed")
+        return api_error(str(exc), 400, "import_failed")
     except Exception:
         db_session.rollback()
         return api_error("Import failed", 500, "import_failed")
@@ -294,21 +298,149 @@ def api_import_count_url():
     data = _json_object()
     if data is None:
         return api_error("A JSON object is required", 400, "invalid_json")
-    protocol = str(data.get("protocol", "http")).lower()
-    if protocol not in PROTOCOLS:
-        return api_error("Invalid protocol", 400, "invalid_protocol")
     try:
-        text = _fetch_public_text(str(data.get("url", "")))
-        count = sum(
-            1
-            for index, line in enumerate(text.splitlines())
-            if index < _MAX_IMPORT_LINES and _proxy_payload(line.strip(), protocol)
-        )
-        return jsonify({"success": True, "count": count})
-    except (requests.RequestException, ValueError) as exc:
+        payload = {
+            "mode": "url",
+            "protocol": data.get("protocol", "http"),
+            "url": data.get("url", ""),
+        }
+        result = preview_import(get_db(), payload)
+        return jsonify({"success": True, "count": result["summary"]["valid"], "summary": result["summary"]})
+    except (requests.RequestException, ImportInputError, ValueError) as exc:
         return api_error(str(exc), 400, "source_fetch_failed")
     except Exception:
         return api_error("Could not inspect source", 500, "source_fetch_failed")
+
+
+@import_export_bp.route("/api/import/sources", methods=["GET", "POST"])
+@login_required
+@require_permission("proxies.import")
+def api_import_sources():
+    db_session = get_db()
+    if request.method == "GET":
+        rows = db_session.query(ImportSource).order_by(ImportSource.updated_at.desc(), ImportSource.id.desc()).all()
+        return jsonify({"success": True, "sources": [row.to_dict() for row in rows]})
+
+    data = _json_object()
+    if data is None:
+        return api_error("A JSON object is required", 400, "invalid_json")
+    try:
+        fields = _source_fields(data)
+        duplicate = (
+            db_session.query(ImportSource.id)
+            .filter(func.lower(ImportSource.name) == fields["name"].lower())
+            .first()
+        )
+        if duplicate:
+            return api_error("A source with this name already exists", 409, "duplicate_source")
+        source = ImportSource(**fields, created_by=g.get("user_id"))
+        db_session.add(source)
+        db_session.commit()
+        return jsonify({"success": True, "source": source.to_dict(include_config=True)}), 201
+    except ImportInputError as exc:
+        db_session.rollback()
+        return api_error(str(exc), 400, "invalid_source")
+    except Exception:
+        db_session.rollback()
+        return api_error("Could not save source", 500, "source_save_failed")
+
+
+@import_export_bp.route("/api/import/sources/<int:source_id>", methods=["GET", "PUT", "DELETE"])
+@login_required
+@require_permission("proxies.import")
+def api_import_source(source_id):
+    db_session = get_db()
+    source = _source_by_id(db_session, source_id)
+    if not source:
+        return api_error("Source not found", 404, "source_not_found")
+    if request.method == "GET":
+        return jsonify({"success": True, "source": source.to_dict(include_config=True)})
+    if request.method == "DELETE":
+        db_session.delete(source)
+        db_session.commit()
+        return jsonify({"success": True, "deleted": source_id})
+
+    data = _json_object()
+    if data is None:
+        return api_error("A JSON object is required", 400, "invalid_json")
+    try:
+        fields = _source_fields(data)
+        duplicate = (
+            db_session.query(ImportSource.id)
+            .filter(
+                ImportSource.id != source_id,
+                func.lower(ImportSource.name) == fields["name"].lower(),
+            )
+            .first()
+        )
+        if duplicate:
+            return api_error("A source with this name already exists", 409, "duplicate_source")
+        for key, value in fields.items():
+            setattr(source, key, value)
+        source.updated_at = utcnow()
+        db_session.commit()
+        return jsonify({"success": True, "source": source.to_dict(include_config=True)})
+    except ImportInputError as exc:
+        db_session.rollback()
+        return api_error(str(exc), 400, "invalid_source")
+    except Exception:
+        db_session.rollback()
+        return api_error("Could not update source", 500, "source_save_failed")
+
+
+@import_export_bp.route("/api/import/sources/<int:source_id>/preview", methods=["POST"])
+@login_required
+@require_permission("proxies.import")
+def api_import_source_preview(source_id):
+    db_session = get_db()
+    source = _source_by_id(db_session, source_id)
+    if not source:
+        return api_error("Source not found", 404, "source_not_found")
+    try:
+        result = preview_import(db_session, _source_import_data(source))
+        result.update({"success": True, "source": source.to_dict()})
+        return jsonify(result)
+    except (requests.RequestException, ImportInputError, ValueError) as exc:
+        return api_error(str(exc), 400, "import_preview_failed")
+    except Exception:
+        return api_error("Could not preview source", 500, "import_preview_failed")
+
+
+@import_export_bp.route("/api/import/sources/<int:source_id>/run", methods=["POST"])
+@login_required
+@require_permission("proxies.import")
+def api_import_source_run(source_id):
+    db_session = get_db()
+    source = _source_by_id(db_session, source_id)
+    if not source:
+        return api_error("Source not found", 404, "source_not_found")
+    if not source.is_active:
+        return api_error("Source is disabled", 409, "source_disabled")
+    try:
+        result = _perform_import(db_session, _source_import_data(source), source=source)
+        result["source"] = source.to_dict()
+        return jsonify(result)
+    except (requests.RequestException, ImportInputError, ValueError) as exc:
+        db_session.rollback()
+        _failed_run(db_session, mode=source.mode, error=exc, source=source)
+        return api_error(str(exc), 400, "import_failed")
+    except Exception:
+        db_session.rollback()
+        _failed_run(db_session, mode=source.mode, error="Import failed", source=source)
+        return api_error("Import failed", 500, "import_failed")
+
+
+@import_export_bp.route("/api/import/runs", methods=["GET"])
+@login_required
+@require_permission("proxies.import")
+def api_import_runs():
+    try:
+        limit = int(request.args.get("limit", "20"))
+    except ValueError:
+        limit = 20
+    limit = min(100, max(1, limit))
+    rows = get_db().query(ImportRun).order_by(ImportRun.started_at.desc(), ImportRun.id.desc()).limit(limit).all()
+    return jsonify({"success": True, "runs": [row.to_dict() for row in rows]})
 
 
 @import_export_bp.route("/api/export", methods=["GET"])

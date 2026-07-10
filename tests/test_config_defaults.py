@@ -175,9 +175,9 @@ class ImportRenderTest(unittest.TestCase):
                     sess['user_id'] = 0
                 res = client.get('/index?tab=import')
                 self.assertEqual(res.status_code, 200)
-                self.assertIn(b'import-source-overview', res.data)
-                self.assertIn(b'Source Center', res.data)
-                self.assertIn(b'import-mode-summary', res.data)
+                self.assertIn(b'source-workbench', res.data)
+                self.assertIn(b'Build the pool from trusted inputs.', res.data)
+                self.assertIn(b'source-manual-content', res.data)
         finally:
             if getattr(db, 'Session', None) is not None:
                 db.Session.remove()

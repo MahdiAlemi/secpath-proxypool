@@ -215,6 +215,108 @@ class Token(Base):
     )
 
 
+class ImportSource(Base):
+    """Saved URL or grouped source configuration for repeatable imports."""
+    __tablename__ = 'import_sources'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    mode = Column(String(16), nullable=False)  # url, links
+    protocol = Column(String(10), nullable=True)
+    source_url = Column(String(2048), nullable=True)
+    source_content = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_by = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    last_run_at = Column(DateTime, nullable=True)
+    last_status = Column(String(20), nullable=True)
+    last_added = Column(Integer, default=0)
+    last_skipped = Column(Integer, default=0)
+    last_error = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index('idx_import_source_name', 'name'),
+        Index('idx_import_source_mode', 'mode'),
+        Index('idx_import_source_active', 'is_active'),
+        {'mysql_engine': 'InnoDB', 'mysql_charset': 'utf8mb4'}
+    )
+
+    def to_dict(self, include_config=False):
+        payload = {
+            'id': self.id,
+            'name': self.name,
+            'mode': self.mode,
+            'protocol': self.protocol,
+            'is_active': bool(self.is_active),
+            'created_by': self.created_by,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'last_run_at': self.last_run_at.isoformat() if self.last_run_at else None,
+            'last_status': self.last_status,
+            'last_added': self.last_added or 0,
+            'last_skipped': self.last_skipped or 0,
+            'last_error': self.last_error,
+        }
+        if include_config:
+            payload['url'] = self.source_url
+            payload['content'] = self.source_content
+        return payload
+
+
+class ImportRun(Base):
+    """Sanitized audit record for an import execution."""
+    __tablename__ = 'import_runs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source_id = Column(Integer, nullable=True)
+    source_name = Column(String(100), nullable=True)
+    mode = Column(String(16), nullable=False)
+    status = Column(String(20), nullable=False, default='completed')
+    total = Column(Integer, default=0)
+    valid = Column(Integer, default=0)
+    added = Column(Integer, default=0)
+    skipped = Column(Integer, default=0)
+    existing = Column(Integer, default=0)
+    invalid = Column(Integer, default=0)
+    input_duplicates = Column(Integer, default=0)
+    protocol_counts = Column(JSON, nullable=True)
+    source_results = Column(JSON, nullable=True)
+    error = Column(Text, nullable=True)
+    created_by = Column(Integer, nullable=True)
+    started_at = Column(DateTime, default=utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index('idx_import_run_source', 'source_id'),
+        Index('idx_import_run_status', 'status'),
+        Index('idx_import_run_started', 'started_at'),
+        {'mysql_engine': 'InnoDB', 'mysql_charset': 'utf8mb4'}
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'source_id': self.source_id,
+            'source_name': self.source_name,
+            'mode': self.mode,
+            'status': self.status,
+            'total': self.total or 0,
+            'valid': self.valid or 0,
+            'added': self.added or 0,
+            'skipped': self.skipped or 0,
+            'existing': self.existing or 0,
+            'invalid': self.invalid or 0,
+            'input_duplicates': self.input_duplicates or 0,
+            'protocol_counts': self.protocol_counts or {},
+            'source_results': self.source_results or [],
+            'error': self.error,
+            'created_by': self.created_by,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+        }
+
+
 class MonitorSession(Base):
     """Monitor session for pause/resume tracking"""
     __tablename__ = 'monitor_sessions'
