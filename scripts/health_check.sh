@@ -42,4 +42,9 @@ assert socks5_first.get('remote_dns') is True
 print('validation helpers OK')
 PY
 
+if [[ -d tests ]]; then
+  echo "[extra] Unit tests"
+  ./scripts/test.sh
+fi
+
 echo "[OK] Health check passed"
