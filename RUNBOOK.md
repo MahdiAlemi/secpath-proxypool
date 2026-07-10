@@ -213,3 +213,14 @@ They are legacy rows. Run Normalize + re-monitor.
 ### HTTPS site fails through an HTTP proxy
 
 HTTP proxy must support `CONNECT`. Only trust it for HTTPS sites if `web_https_ok=True`.
+
+## 10. Repository hygiene
+
+Runtime files should not be committed. Before committing a phase, run:
+
+```bash
+./scripts/clean_runtime.sh
+./scripts/repo_hygiene_check.sh
+```
+
+If `repo_hygiene_check.sh` reports tracked runtime artifacts, remove them from git tracking with `git rm --cached` as shown by the script. This keeps local files on disk while preventing future commits of DB/log/progress/cache files.

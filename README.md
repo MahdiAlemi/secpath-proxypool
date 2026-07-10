@@ -122,6 +122,18 @@ curl -x http://127.0.0.1:8080 https://api.ipify.org
 ./scripts/health_check.sh
 ```
 
+Repository hygiene check:
+
+```bash
+./scripts/repo_hygiene_check.sh
+```
+
+Cleanup generated runtime/cache files:
+
+```bash
+./scripts/clean_runtime.sh
+```
+
 This checks Python syntax, DB selection, dashboard imports, and key validation helpers.
 
 ## SQLite vs MySQL
