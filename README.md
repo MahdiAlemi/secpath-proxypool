@@ -184,3 +184,16 @@ Server profiles now use a dedicated Serving Center with searchable runtime state
 ## Insights, Operations, and Access
 
 The remaining administration surfaces now use dedicated responsive pages. Insights summarizes quality, freshness, latency, reliability, capability coverage, and network concentration. Operations provides security/runtime preflight, backups, password rotation, and guarded maintenance. Access manages database users, effective permissions, proxy scope, and API sessions while protecting the final active administrator. See [`docs/INSIGHTS_OPERATIONS_UI.md`](docs/INSIGHTS_OPERATIONS_UI.md).
+
+## Phase 10 finalization
+
+After applying the finalization overlay, run:
+
+```bash
+bash scripts/apply_phase10_cleanup.sh
+bash scripts/health_check.sh
+bash scripts/repo_hygiene_check.sh
+```
+
+The cleanup removes the retired UI compatibility stylesheet and normalizes executable modes. The health suite includes an end-to-end, network-free workflow test. See `docs/FINALIZATION.md`.
+

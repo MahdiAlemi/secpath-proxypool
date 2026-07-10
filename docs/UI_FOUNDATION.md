@@ -20,7 +20,6 @@ Phase 4 replaces the old horizontal dashboard with a new application shell and a
 - `static/css/base.css`: shared controls, tables, forms, and modals.
 - `static/css/shell.css`: sidebar, top bar, responsive navigation.
 - `static/css/pages.css`: Cockpit and transitional page layout.
-- `static/css/compat.css`: temporary compatibility rules for modules that have not yet been redesigned.
 - `static/js/shell.js`: navigation state, responsive sidebar, URL synchronization, and keyboard dismissal.
 
 ## Phase boundary
@@ -35,7 +34,7 @@ This phase fully redesigns:
 - responsive behavior;
 - template organization.
 
-Inventory, Sources, Validation, Serving, Insights, Users, and Operations remain functional inside the new shell. Their internal information architecture is intentionally migrated in later phases. `compat.css` should be removed after those modules no longer depend on legacy selectors.
+All functional modules have now been migrated to dedicated templates, CSS, and JavaScript. The temporary compatibility stylesheet was removed in the finalization phase; shared primitives live in `base.css`, while each workspace owns its page-specific styles.
 
 ## No deployment side effects
 

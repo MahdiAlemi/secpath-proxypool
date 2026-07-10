@@ -25,7 +25,7 @@ def format_time(ts):
         return "unknown"
     try:
         return dt.astimezone(timezone.utc).strftime("%b %d, %Y %H:%M UTC")
-    except:
+    except (TypeError, ValueError, OverflowError):
         return "unknown"
 
 

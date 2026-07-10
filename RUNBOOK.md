@@ -431,3 +431,16 @@ http://127.0.0.1:5003/index?tab=users
 ```
 
 Check light/dark mode, narrow-window layout, permission-gated Operations controls, backup listing, user editing, proxy-scope display, and the final-administrator safeguards. Do not restore a backup or run destructive maintenance solely for visual testing.
+
+## Phase 10 finalization
+
+After applying the finalization overlay, run:
+
+```bash
+bash scripts/apply_phase10_cleanup.sh
+bash scripts/health_check.sh
+bash scripts/repo_hygiene_check.sh
+```
+
+The cleanup removes the retired UI compatibility stylesheet and normalizes executable modes. The health suite includes an end-to-end, network-free workflow test. See `docs/FINALIZATION.md`.
+

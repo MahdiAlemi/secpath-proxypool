@@ -215,3 +215,24 @@ th.sortable:hover { color: var(--text-strong); }
   .modal { padding: 12px; }
   .modal-content { padding: 18px; border-radius: var(--radius-lg); }
 }
+
+/* Shared dialog and feedback primitives. */
+.form-input-compact { width: auto; min-width: 130px; }
+.modal-textarea-large { min-height: 200px; }
+.modal-content-compact { max-width: 400px; }
+.modal-message { margin-bottom: 20px; font-size: 14px; white-space: pre-wrap; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 12px; }
+.app-toast {
+  position: fixed; right: 20px; bottom: 20px; z-index: 1200;
+  max-width: min(360px, calc(100vw - 40px)); padding: 11px 15px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--radius-sm); background: var(--text-strong); color: var(--panel);
+  font-size: 12px; font-weight: 750; box-shadow: var(--shadow-md);
+  opacity: 0; transform: translateY(8px); transition: opacity 160ms ease, transform 160ms ease;
+}
+.app-toast.visible { opacity: 1; transform: translateY(0); }
+.clipboard-helper { position: fixed; left: -9999px; top: 0; opacity: 0; pointer-events: none; }
+@media (max-width: 520px) {
+  .modal-actions { flex-direction: column-reverse; }
+  .modal-actions .btn { width: 100%; }
+}

@@ -7,7 +7,7 @@
     </div>
     <div class="form-group">
       <label class="form-label">Protocol</label>
-      <select id="add-proto" class="form-input" style="width:auto">
+      <select id="add-proto" class="form-input form-input-compact">
         <option value="http">HTTP</option>
         <option value="https">HTTPS</option>
         <option value="socks4">SOCKS4</option>
@@ -43,7 +43,7 @@
     </div>
     <div class="form-group">
       <label class="form-label">Proxies (one per line)</label>
-      <textarea id="bulk-proxies" class="form-input" style="min-height:200px" placeholder="protocol://ip:port&#10;protocol://user:pass@ip:port&#10;ip:port user pass"></textarea>
+      <textarea id="bulk-proxies" class="form-input modal-textarea-large" placeholder="protocol://ip:port&#10;protocol://user:pass@ip:port&#10;ip:port user pass"></textarea>
     </div>
     <button class="btn btn-primary" onclick="doBulkAdd()">Add Proxies</button>
   </div>
@@ -59,7 +59,7 @@
     <input type="hidden" id="edit-id">
     <div class="form-group">
       <label class="form-label">Protocol</label>
-      <select id="edit-proto" class="form-input" style="width:auto">
+      <select id="edit-proto" class="form-input form-input-compact">
         <option value="http">HTTP</option>
         <option value="https">HTTPS</option>
         <option value="socks4">SOCKS4</option>
@@ -83,23 +83,6 @@
       <input type="password" id="edit-pass" class="form-input">
     </div>
     <button class="btn btn-primary" onclick="doEditProxy()">Save Changes</button>
-  </div>
-</div>
-
-<!-- ADVANCED SEARCH MODAL -->
-<div id="modal-adv-search" class="modal">
-  <div class="modal-content" style="max-width:600px;max-height:85vh;overflow:auto">
-    <div class="modal-header">
-      <div class="modal-title">Advanced Search</div>
-      <button class="modal-close" onclick="closeModal('modal-adv-search')">X</button>
-    </div>
-    <div id="adv-search-rules" style="margin-bottom:16px"></div>
-    <button class="btn btn-sm" onclick="addSearchRule()" style="margin-bottom:16px">+ Add Rule</button>
-    <div style="display:flex;gap:12px">
-      <button class="btn btn-primary" onclick="applyAdvancedSearch()">Apply</button>
-      <button class="btn" onclick="clearAdvancedSearch()">Clear</button>
-      <button class="btn" onclick="closeModal('modal-adv-search')">Close</button>
-    </div>
   </div>
 </div>
 
@@ -386,13 +369,13 @@
 
 <!-- CONFIRMATION MODAL -->
 <div id="modal-confirm" class="modal">
-  <div class="modal-content" style="max-width:400px">
+  <div class="modal-content modal-content-compact">
     <div class="modal-header">
       <div class="modal-title" id="confirm-title">Confirm</div>
       <button class="modal-close" onclick="closeConfirmModal()">&times;</button>
     </div>
-    <div id="confirm-message" style="margin-bottom:20px;font-size:14px"></div>
-    <div style="display:flex;gap:12px;justify-content:flex-end">
+    <div id="confirm-message" class="modal-message"></div>
+    <div class="modal-actions">
       <button class="btn" onclick="closeConfirmModal()">Cancel</button>
       <button class="btn btn-danger" id="confirm-btn" onclick="confirmAction()">Confirm</button>
     </div>
@@ -401,13 +384,13 @@
 
 <!-- ALERT MODAL -->
 <div id="modal-alert" class="modal">
-  <div class="modal-content" style="max-width:400px">
+  <div class="modal-content modal-content-compact">
     <div class="modal-header">
       <div class="modal-title" id="alert-title">Alert</div>
       <button class="modal-close" onclick="closeAlertModal()">&times;</button>
     </div>
-    <div id="alert-message" style="margin-bottom:20px;font-size:14px"></div>
-    <div style="display:flex;gap:12px;justify-content:flex-end">
+    <div id="alert-message" class="modal-message"></div>
+    <div class="modal-actions">
       <button class="btn btn-primary" onclick="closeAlertModal()">OK</button>
     </div>
   </div>

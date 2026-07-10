@@ -70,22 +70,6 @@
 .workflow-step small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
 .workflow-connector { width: 22px; height: 1px; background: var(--border-strong); }
 
-/* Compatibility styling for functional pages while each module is redesigned. */
-.tab-content > .card:first-child { margin-top: 0; }
-.inventory-overview, .monitor-overview, .server-serving-overview, .stats-readiness-insights { gap: 9px; }
-.inventory-kpi, .monitor-kpi, .server-kpi, .stats-insight-card, .stat-card { border-radius: var(--radius-md) !important; box-shadow: none !important; }
-.inventory-context-bar, .monitor-guidance, .serving-guidance, .import-guidance, .stats-insight-summary { border-radius: var(--radius-md) !important; }
-.monitors-grid, .servers-grid { padding: 0; }
-.monitor-card, .server-card { border-radius: var(--radius-md); background: var(--panel); box-shadow: var(--shadow-xs); }
-.monitor-card:hover, .server-card:hover { box-shadow: var(--shadow-sm); }
-.import-center-card, .monitor-center-card, .serving-center-card, .stats-insights-header { background: var(--panel) !important; }
-.stats-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 9px; }
-.operations-modal { max-width: 940px !important; }
-.settings-op-card, .settings-section-card, .settings-danger-zone { border-radius: var(--radius-md) !important; }
-.accordion-item { border-radius: var(--radius-sm); }
-.accordion-header { background: var(--panel-light); }
-.accordion-header:hover { background: var(--accent-soft); color: var(--text); }
-
 @media (max-width: 1100px) {
   .metric-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-layout { grid-template-columns: 1fr; }
