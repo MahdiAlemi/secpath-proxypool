@@ -1,214 +1,243 @@
-# ProxyPool
+<div align="center">
+  <img src="dashboard/static/img/favicon.svg" width="96" height="96" alt="ProxyPool logo">
 
-ProxyPool is a local-first proxy inventory, validation, monitoring, and proxy-serving application built with Python, Flask, SQLAlchemy, and a browser dashboard.
+  # ProxyPool
 
-The repository is being rebuilt in controlled overlays. Existing backend behavior is preserved unless a phase explicitly changes and tests it. Deployment is never part of an overlay unless it is separately and explicitly approved.
+  **A local-first control plane for importing, validating, analyzing, and serving proxy pools.**
 
-## Components
+  <p>
+    <img alt="Python 3.11+" src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white">
+    <img alt="Flask" src="https://img.shields.io/badge/Flask-2.3%2B-000000?logo=flask&logoColor=white">
+    <img alt="SQLAlchemy" src="https://img.shields.io/badge/SQLAlchemy-2.0%2B-D71F00">
+    <img alt="Local-first" src="https://img.shields.io/badge/runtime-local--first-36B5A8">
+  </p>
+</div>
 
-- `proxy_importer/`: imports and normalizes proxy sources.
-- `proxy_monitor/`: validates proxy reachability and capabilities.
-- `proxy_server/`: exposes local HTTP/SOCKS proxy listeners backed by the pool.
-- `dashboard/`: Flask dashboard and JSON API.
-- `database.py`: SQLAlchemy models and database lifecycle.
-- `tests/`: automated regression tests.
-- `scripts/`: local setup, health checks, cleanup, and overlay helpers.
+ProxyPool combines proxy ingestion, capability validation, operational monitoring, pool analytics, and local HTTP/SOCKS serving in one security-conscious Flask application. It is designed for operators who need to understand **which proxies are usable, for what purpose, and with what level of confidence**.
 
-## Local project path
+## Highlights
 
-```bash
-cd /home/mahdi/projects/proxyPool
+- **Inventory workspace** — searchable, filterable proxy inventory with scoped bulk actions and detailed health metadata.
+- **Source management** — manual, file, URL, and grouped-source imports with a non-mutating preview before execution.
+- **Validation center** — reusable validation profiles, live progress, pause/resume, recent outcomes, and bounded logs.
+- **Serving center** — HTTP/SOCKS listener profiles with capability-aware candidate preflight and rotation policies.
+- **Insights** — health, latency, reliability, protocol, capability, freshness, geography, and provider concentration views.
+- **Operations** — diagnostics, private backups, guarded restore, runtime cleanup, and release-readiness checks.
+- **Access control** — database-backed users, roles, permission overrides, API sessions, and per-user proxy scope.
+- **Local-first security** — loopback dashboard binding by default, CSRF protection, credential redaction, SSRF controls, and process identity checks.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Sources[Proxy sources] --> Importer[Importer & normalizer]
+    Importer --> DB[(SQLite / MySQL)]
+    DB --> Inventory[Inventory]
+    DB --> Monitor[Validation workers]
+    Monitor --> DB
+    DB --> Server[HTTP / SOCKS serving]
+    Dashboard[Flask dashboard & API] --> DB
+    Dashboard --> Monitor
+    Dashboard --> Server
 ```
 
-## Development setup
+| Component | Responsibility |
+| --- | --- |
+| `dashboard/` | Web dashboard, authentication, authorization, and JSON API |
+| `proxy_importer/` | Source parsing and proxy normalization |
+| `proxy_monitor/` | Reachability and capability validation |
+| `proxy_server/` | Local HTTP/SOCKS listeners backed by the proxy pool |
+| `database.py` | SQLAlchemy models and database lifecycle |
+| `scripts/` | Setup, runtime, backup, migration, health, and release tooling |
+| `tests/` | Regression, security, lifecycle, UI, and end-to-end tests |
+
+## Requirements
+
+- Linux or WSL
+- Python 3.11 or newer
+- SQLite for the default local setup
+- MySQL is optional and must be configured explicitly
+
+## Quick start
+
+### 1. Create a virtual environment
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install --upgrade pip
 python3 -m pip install -r requirements.txt
-cp -n .env.example .env
 ```
 
-Review `.env` before starting the application. Do not use example credentials or secrets outside a local development machine.
+On Debian or Ubuntu, install `python3-venv` first if the `venv` module is unavailable:
 
-The local default database is SQLite:
+```bash
+sudo apt update
+sudo apt install python3-venv
+```
+
+Using a virtual environment avoids the `externally-managed-environment` error enforced by newer Debian/Ubuntu Python installations.
+
+### 2. Create local configuration
+
+```bash
+cp .env.example .env
+python3 scripts/rotate_local_secrets.py
+```
+
+The secret rotation script writes independent `FLASK_SECRET_KEY` and `JWT_SECRET` values directly to `.env`, does not print them, and sets the file mode to `0600`.
+
+The default database configuration is:
 
 ```dotenv
 DB_TYPE=sqlite
 SQLITE_DB_PATH=proxies.db
 ```
 
-An explicit SQLAlchemy URL takes precedence when set:
-
-```dotenv
-DATABASE_URL=sqlite:////absolute/path/to/proxies.sqlite
-```
-
-Start the dashboard:
-
-```bash
-bash scripts/run_dashboard.sh
-```
-
-The default dashboard address is:
-
-```text
-http://127.0.0.1:5003
-```
-
-## Verification
-
-Run the complete local baseline check:
-
-```bash
-bash scripts/health_check.sh
-```
-
-Run tests only:
-
-```bash
-bash scripts/test.sh
-```
-
-Both commands use disposable SQLite databases and must not modify the working `proxies.db`.
-
-Check repository hygiene:
-
-```bash
-bash scripts/repo_hygiene_check.sh
-```
-
-## Overlay workflow
-
-Each approved change set is delivered as a ZIP overlay. From the repository root:
-
-```bash
-unzip -o /mnt/c/Users/Mahdi/Downloads/<overlay>.zip -d .
-```
-
-When the overlay includes an apply script, run it next. For example:
-
-```bash
-bash scripts/apply_phase0_cleanup.sh
-```
-
-Then verify before committing:
-
-```bash
-bash scripts/health_check.sh
-bash scripts/repo_hygiene_check.sh
-git status --short
-```
-
-A ZIP archive can add or overwrite files but cannot remove tracked files. Cleanup overlays therefore include an explicit, reviewable apply script for deletions and `git rm --cached` operations.
-
-## Runtime data
-
-The following are local runtime data and must not be committed:
-
-- `.env`
-- `proxies.db` and database backups
-- `.monitors.json`, `.servers.json`, `.server_config.json`
-- `.runtime/` and registry lock files
-- `progress/*.json`
-- logs, PID files, caches, and generated archives
-
-The cleanup script preserves the root database and current root runtime state while removing them from Git tracking.
-
-## Database selection
-
-SQLite is the supported local default. MySQL must be selected explicitly:
-
-```dotenv
-DB_TYPE=mysql
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=proxypool
-DB_PASS=<strong-password>
-DB_NAME=proxypool
-```
-
-Back up the active database before any destructive import, restore, or schema operation.
-
-## Current engineering status
-
-The original dashboard and backend have known correctness, security, lifecycle, and maintainability issues. The verified baseline and rebuild sequence are documented in [`docs/BASELINE_AUDIT.md`](docs/BASELINE_AUDIT.md). The dashboard will be replaced rather than incrementally restyled.
-
-## Authentication and security baseline
-
-The application no longer ships with a built-in default password. Prefer a database-backed administrator:
+### 3. Initialize an administrator
 
 ```bash
 python3 scripts/create_admin.py --username admin --role admin
 ```
 
-Set independent random values for `FLASK_SECRET_KEY` and `JWT_SECRET` in `.env`. The optional `DASHBOARD_PASSWORD` variable only enables a legacy environment-backed admin account for migration compatibility.
+No built-in default password is shipped with the application.
 
-Browser mutations require CSRF tokens. General proxy APIs and exports redact upstream credentials. Credential-bearing export requires the `proxies.credentials` permission and `include_credentials=true`.
-
-The complete local security baseline and remaining boundaries are documented in [`docs/SECURITY.md`](docs/SECURITY.md).
-
-
-## Monitor lifecycle
-
-Monitor processes now use atomic runtime claims, exact process-identity checks, cooperative cancellation, resumable paused sessions, and accurate progress persistence. Direct subprocess and systemd starts are mutually exclusive, so enabling a service no longer launches a duplicate monitor.
-
-Operational states and recovery behavior are documented in [`docs/MONITOR_LIFECYCLE.md`](docs/MONITOR_LIFECYCLE.md).
-
-## Proxy server core
-
-Proxy listeners now default to loopback, reject unauthenticated non-loopback binds unless an explicit override is set, keep listener credentials out of process arguments, and use process-safe runtime claims. HTTP CONNECT, normal HTTP forwarding, SOCKS4/SOCKS4a, SOCKS5, upstream HTTPS TLS/SNI, bounded concurrency, retry exclusion, and sticky client affinity are covered by regression tests.
-
-Operational behavior and protocol boundaries are documented in [`docs/PROXY_SERVER_CORE.md`](docs/PROXY_SERVER_CORE.md).
-
-## New dashboard foundation
-
-The dashboard now uses a responsive sidebar shell, a focused operational Cockpit, modular Jinja page templates, and a shared light/dark design system. See `docs/UI_FOUNDATION.md` for the phase boundary and migration structure.
-
-## Inventory workspace
-
-The proxy Inventory now uses a compact, responsive table with operational filters, explicit multi-selection, scoped bulk actions, and a detail drawer for progressive disclosure. Credential redaction and per-user proxy scope are enforced by the API rather than only by the browser. See [`docs/INVENTORY_UI.md`](docs/INVENTORY_UI.md).
-
-## Sources and import workspace
-
-Proxy ingestion now uses a preflight-first workspace for manual batches, public list URLs, and grouped protocol sources. Preview and execution share the same normalization engine, saved sources can be edited and rerun, and actual imports create a sanitized audit trail. See [`docs/SOURCES_UI.md`](docs/SOURCES_UI.md).
-## Validation workspace
-
-Validation profiles now use a dedicated, responsive workspace with searchable runtime states, live progress, recent credential-redacted outcomes, log inspection, and a non-mutating candidate preview before save. The monitor lifecycle remains process-safe and resumable. See [`docs/VALIDATION_UI.md`](docs/VALIDATION_UI.md).
-
-## Serving workspace
-
-Server profiles now use a dedicated Serving Center with searchable runtime state, credential-redacted profile details, copyable client endpoints, bounded log inspection, capability-aware candidate preflight, and a responsive profile editor. Listener security and process ownership remain enforced by the backend. See [`docs/SERVING_UI.md`](docs/SERVING_UI.md).
-
-## Insights, Operations, and Access
-
-The remaining administration surfaces now use dedicated responsive pages. Insights summarizes quality, freshness, latency, reliability, capability coverage, and network concentration. Operations provides security/runtime preflight, backups, password rotation, and guarded maintenance. Access manages database users, effective permissions, proxy scope, and API sessions while protecting the final active administrator. See [`docs/INSIGHTS_OPERATIONS_UI.md`](docs/INSIGHTS_OPERATIONS_UI.md).
-
-## Phase 10 finalization
-
-After applying the finalization overlay, run:
+### 4. Start the dashboard
 
 ```bash
-bash scripts/apply_phase10_cleanup.sh
-bash scripts/health_check.sh
-bash scripts/repo_hygiene_check.sh
+bash scripts/run_dashboard.sh
 ```
 
-The cleanup removes the retired UI compatibility stylesheet and normalizes executable modes. The health suite includes an end-to-end, network-free workflow test. See `docs/FINALIZATION.md`.
+Open:
 
-## Local runtime hardening
+```text
+http://127.0.0.1:5003
+```
 
-The development dashboard binds to `127.0.0.1:5003` by default. Configure `DASHBOARD_HOST`, `DASHBOARD_PORT`, and the explicit `DASHBOARD_ALLOW_PUBLIC` override in `.env` when needed. Rotate exposed local secrets without printing them by running `python3 scripts/rotate_local_secrets.py`. See `docs/LOCAL_RUNTIME.md`.
-## Release readiness and data portability
+The development dashboard binds to loopback by default. A non-loopback bind requires an explicit trusted-network override.
 
-Run the non-deploying release-candidate verification with:
+## Core workflow
+
+1. Add or save proxy sources in **Sources**.
+2. Preview normalization and duplicate handling before import.
+3. Inspect and filter imported records in **Inventory**.
+4. Create a profile in **Validation** and run capability checks.
+5. Review health, latency, reliability, and freshness in **Insights**.
+6. Create a listener in **Serving** using only the required protocols and capabilities.
+7. Use **Operations** for diagnostics, backups, restore, and guarded maintenance.
+
+## Verification
+
+Run the complete disposable-database health suite:
+
+```bash
+bash scripts/health_check.sh
+```
+
+Run repository hygiene and static analysis:
+
+```bash
+bash scripts/repo_hygiene_check.sh
+ruff check dashboard tests scripts
+```
+
+Run the full release-readiness check without deploying or restarting services:
 
 ```bash
 bash scripts/release_check.sh
 ```
 
-SQLite backups are collision-safe, validated, and created with mode `0600` via
-`scripts/sqlite_backup.py`. The migration CLI is dry-run by default and copies
-all current Proxy columns while skipping existing identities. See
-[`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md).
+After committing, require a clean Git working tree as well:
+
+```bash
+bash scripts/release_check.sh --require-clean
+```
+
+All automated checks use disposable SQLite databases and must not modify the working `proxies.db`.
+
+## Backups and migration
+
+Create a private, integrity-checked SQLite backup:
+
+```bash
+python3 scripts/sqlite_backup.py backup \
+  --database proxies.db \
+  --output-dir backups
+```
+
+Verify a backup:
+
+```bash
+python3 scripts/sqlite_backup.py verify backups/proxies_backup_*.sqlite
+```
+
+Migration is dry-run by default:
+
+```bash
+python3 migrate.py \
+  --source proxies.db \
+  --target-url 'sqlite:////tmp/proxypool-target.sqlite'
+```
+
+Add `--execute` only after reviewing the plan. Destructive replacement requires an additional explicit confirmation flag.
+
+## Security model
+
+ProxyPool treats proxy credentials and runtime controls as sensitive data.
+
+- Browser mutations require CSRF tokens.
+- General inventory and status APIs redact upstream usernames and passwords.
+- Credential-bearing export requires an explicit permission and request flag.
+- URL imports block loopback, private, link-local, and reserved destinations and validate the connected peer.
+- Dashboard and proxy listeners default to loopback.
+- Public listeners require authentication or an explicit unsafe override.
+- Monitor and server processes use ownership claims and exact process-identity checks.
+- Runtime cleanup refuses to proceed while owned or orphaned processes are active.
+- The final active administrator cannot be deleted, disabled, or demoted.
+
+See [`docs/SECURITY.md`](docs/SECURITY.md) for the complete security boundary.
+
+## Documentation
+
+| Document | Topic |
+| --- | --- |
+| [`RUNBOOK.md`](RUNBOOK.md) | Operator commands and recovery procedures |
+| [`docs/SECURITY.md`](docs/SECURITY.md) | Security controls and trust boundaries |
+| [`docs/MONITOR_LIFECYCLE.md`](docs/MONITOR_LIFECYCLE.md) | Monitor process lifecycle and recovery |
+| [`docs/PROXY_SERVER_CORE.md`](docs/PROXY_SERVER_CORE.md) | HTTP/SOCKS serving behavior |
+| [`docs/INVENTORY_UI.md`](docs/INVENTORY_UI.md) | Inventory workspace |
+| [`docs/SOURCES_UI.md`](docs/SOURCES_UI.md) | Source and import workflow |
+| [`docs/VALIDATION_UI.md`](docs/VALIDATION_UI.md) | Validation workspace |
+| [`docs/SERVING_UI.md`](docs/SERVING_UI.md) | Serving workspace |
+| [`docs/INSIGHTS_OPERATIONS_UI.md`](docs/INSIGHTS_OPERATIONS_UI.md) | Insights, Operations, and Access |
+| [`docs/LOCAL_RUNTIME.md`](docs/LOCAL_RUNTIME.md) | Local binding and secret rotation |
+| [`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md) | Backup, migration, and release checks |
+
+## Runtime files
+
+Do not commit local runtime data, including:
+
+- `.env`
+- `proxies.db` and database backups
+- `.monitors.json`, `.servers.json`, and `.server_config.json`
+- `.runtime/`, `progress/`, PID files, logs, caches, and generated archives
+
+The repository hygiene check rejects accidentally tracked runtime files.
+
+## Production note
+
+`scripts/run_dashboard.sh` starts Flask's development server and is intended for local operation only. A production deployment requires an approved WSGI/reverse-proxy configuration, TLS, secure cookies, persistent secrets, backups, and an explicit network exposure review.
+
+## Contributing
+
+Before opening a pull request:
+
+```bash
+bash scripts/release_check.sh --require-clean
+```
+
+Keep secrets, proxy credentials, databases, generated lists, and runtime logs out of commits and issue reports.
+
+## License
+
+No open-source license has been selected yet. Add a `LICENSE` file before granting public reuse, modification, or redistribution rights.
