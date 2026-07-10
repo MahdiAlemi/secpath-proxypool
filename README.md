@@ -197,3 +197,6 @@ bash scripts/repo_hygiene_check.sh
 
 The cleanup removes the retired UI compatibility stylesheet and normalizes executable modes. The health suite includes an end-to-end, network-free workflow test. See `docs/FINALIZATION.md`.
 
+## Local runtime hardening
+
+The development dashboard binds to `127.0.0.1:5003` by default. Configure `DASHBOARD_HOST`, `DASHBOARD_PORT`, and the explicit `DASHBOARD_ALLOW_PUBLIC` override in `.env` when needed. Rotate exposed local secrets without printing them by running `python3 scripts/rotate_local_secrets.py`. See `docs/LOCAL_RUNTIME.md`.

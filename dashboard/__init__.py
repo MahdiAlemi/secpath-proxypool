@@ -11,6 +11,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_from_directory,
     session,
     url_for,
 )
@@ -113,6 +114,15 @@ def create_app():
         cleanup_expired_tokens()
         app.extensions["token_cleanup_next_at"] = now + token_cleanup_interval
         return None
+
+    @app.route("/favicon.ico")
+    def favicon():
+        return send_from_directory(
+            os.path.join(app.static_folder, "img"),
+            "favicon.ico",
+            mimetype="image/vnd.microsoft.icon",
+            max_age=86400,
+        )
 
     @app.route("/login", methods=["GET", "POST"])
     def login():

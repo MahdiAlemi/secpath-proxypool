@@ -69,4 +69,14 @@ if [[ ! -f dashboard/static/img/favicon.svg ]]; then
   exit 1
 fi
 
+if [[ ! -f dashboard/static/img/favicon.ico ]]; then
+  echo "[FAIL] dashboard/static/img/favicon.ico is missing"
+  exit 1
+fi
+
+if grep -q 'app.run(host="0.0.0.0"' dashboard/app.py; then
+  echo "[FAIL] Dashboard development server is hard-coded to a public bind."
+  exit 1
+fi
+
 echo "[OK] Repository hygiene check passed"
