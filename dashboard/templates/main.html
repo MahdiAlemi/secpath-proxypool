@@ -340,13 +340,26 @@ userProxyFilters = {{ proxy_filters | tojson }};
 
     <!-- MONITOR TAB -->
     <div id="tab-monitor" class="tab-content {{ 'hidden' if tab!='monitor' else '' }}">
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-header">
-          <div class="card-title">Proxy Monitors</div>
+      <div class="card monitor-center-card" style="margin-bottom:16px">
+        <div class="card-header monitor-center-header">
+          <div>
+            <div class="card-title">Validation Center <span class="health-pill">Protocol aware</span></div>
+            <div class="section-hint">Run monitor profiles to promote raw imports into real-world ready proxy pools.</div>
+          </div>
           <button class="btn btn-primary btn-sm" onclick="showAddMonitorForm()">+ Add New Monitor Profile</button>
         </div>
+        <div class="monitor-overview">
+          <div class="monitor-kpi"><span>Profiles</span><strong id="monitor-kpi-total">0</strong><small>configured monitors</small></div>
+          <div class="monitor-kpi"><span>Running</span><strong id="monitor-kpi-running">0</strong><small>active validation jobs</small></div>
+          <div class="monitor-kpi"><span>Paused</span><strong id="monitor-kpi-paused">0</strong><small>resume when ready</small></div>
+          <div class="monitor-kpi"><span>Candidate pool</span><strong id="monitor-kpi-proxies">0</strong><small>proxies targeted by profiles</small></div>
+        </div>
+        <div class="monitor-guidance">
+          <div><strong>Recommended flow</strong><span>Import → Monitor HTTPS/DNS/Telegram → Review Inventory → Build Server.</span></div>
+          <div id="monitor-runtime-summary">Waiting for monitor snapshot...</div>
+        </div>
         <div id="monitors-grid" class="monitors-grid">
-          <div class="monitors-empty">No monitor profiles. Click "+ Add New Monitor Profile" to create one.</div>
+          <div class="monitors-empty monitor-empty-state"><strong>No validation profiles yet.</strong><span>Create a monitor profile to test protocol reachability, HTTPS, remote DNS, Telegram, and geo data.</span><button class="btn btn-primary btn-sm" onclick="showAddMonitorForm()">Create monitor profile</button></div>
         </div>
       </div>
     </div>

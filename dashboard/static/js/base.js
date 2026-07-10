@@ -1602,6 +1602,38 @@ function formatMonitorTime(isoString) {
   return timeStr + ' (' + relativeStr + ')';
 }
 
+
+function updateMonitorOverview(monitors) {
+  monitors = monitors || {};
+  var ids = Object.keys(monitors);
+  var running = 0;
+  var paused = 0;
+  var proxyTotal = 0;
+  ids.forEach(function(mid) {
+    var m = monitors[mid] || {};
+    var progress = m.progress || {};
+    if (m.running) running += 1;
+    if (!m.running && progress && progress.paused === true) paused += 1;
+    proxyTotal += Number(m.proxy_count || 0);
+  });
+  setTextSafe('monitor-kpi-total', ids.length);
+  setTextSafe('monitor-kpi-running', running);
+  setTextSafe('monitor-kpi-paused', paused);
+  setTextSafe('monitor-kpi-proxies', proxyTotal);
+  var summary = document.getElementById('monitor-runtime-summary');
+  if (summary) {
+    if (ids.length === 0) {
+      summary.textContent = 'Create a monitor profile to start validating imported proxies.';
+    } else if (running > 0) {
+      summary.textContent = running + ' monitor job' + (running > 1 ? 's are' : ' is') + ' validating proxies now.';
+    } else if (paused > 0) {
+      summary.textContent = paused + ' monitor job' + (paused > 1 ? 's are' : ' is') + ' paused and can be resumed.';
+    } else {
+      summary.textContent = 'All monitor profiles are idle. Start one to refresh quality signals.';
+    }
+  }
+}
+
 async function checkMonitorStatus() {
   var res = await authFetch('/api/monitor');
   var data = await res.json();
@@ -1609,9 +1641,10 @@ async function checkMonitorStatus() {
   var grid = document.getElementById('monitors-grid');
   var monitors = data.monitors || {};
   var monitorIds = Object.keys(monitors);
+  updateMonitorOverview(monitors);
   
   if (monitorIds.length === 0) {
-    grid.innerHTML = '<div class="monitors-empty">No monitor profiles. Click "+ Add New Monitor Profile" to create one.</div>';
+    grid.innerHTML = '<div class="monitors-empty monitor-empty-state"><strong>No validation profiles yet.</strong><span>Create a monitor profile to test protocol reachability, HTTPS, remote DNS, Telegram, and geo data.</span><button class="btn btn-primary btn-sm" onclick="showAddMonitorForm()">Create monitor profile</button></div>';
     return;
   }
   
@@ -1657,7 +1690,7 @@ async function checkMonitorStatus() {
     }
     
     var card = document.createElement('div');
-    card.className = 'monitor-card';
+    card.className = 'monitor-card monitor-profile-card';
     
     var progress = m.progress || {};
     var isPaused = !isRunning && progress && progress.paused === true;

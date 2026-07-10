@@ -130,5 +130,28 @@ class InventoryRenderTest(unittest.TestCase):
                 db.engine.dispose()
 
 
+class MonitorRenderTest(unittest.TestCase):
+    def test_monitor_center_shell_renders(self):
+        from dashboard import create_app
+        from database import db
+        app = create_app()
+        app.config['TESTING'] = True
+        try:
+            with app.test_client() as client:
+                with client.session_transaction() as sess:
+                    sess['user'] = 'admin'
+                    sess['user_id'] = 0
+                res = client.get('/index?tab=monitor')
+                self.assertEqual(res.status_code, 200)
+                self.assertIn(b'monitor-overview', res.data)
+                self.assertIn(b'Validation Center', res.data)
+                self.assertIn(b'monitor-runtime-summary', res.data)
+        finally:
+            if getattr(db, 'Session', None) is not None:
+                db.Session.remove()
+            if getattr(db, 'engine', None) is not None:
+                db.engine.dispose()
+
+
 if __name__ == '__main__':
     unittest.main()
