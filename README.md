@@ -1,184 +1,129 @@
-# ProxyPool Control Center
+# ProxyPool
 
-ProxyPool is a local-first proxy inventory, validation, monitoring, and rotating proxy server dashboard.
+ProxyPool is a local-first proxy inventory, validation, monitoring, and proxy-serving application built with Python, Flask, SQLAlchemy, and a browser dashboard.
 
-Current focus: build a commercially viable proxy-quality pipeline where an `alive` proxy means it is highly likely to work in real-world use cases, not just respond to a weak TCP/HTTP check.
+The repository is being rebuilt in controlled overlays. Existing backend behavior is preserved unless a phase explicitly changes and tests it. Deployment is never part of an overlay unless it is separately and explicitly approved.
 
-## What it does
+## Components
 
-- Imports HTTP / HTTPS / SOCKS4 / SOCKS5 proxies from URLs or files.
-- Stores proxies in SQLite by default for local/dev use.
-- Continuously validates proxies with real capability checks.
-- Tracks lifecycle states: `untested`, `alive`, `soft`, `cooling`, `dead`, `revived`, `semi-revived`, `flaky`.
-- Exposes a dashboard for inventory, monitoring, cleanup, server profiles, and stats.
-- Runs local rotating proxy server profiles with use-case filters.
+- `proxy_importer/`: imports and normalizes proxy sources.
+- `proxy_monitor/`: validates proxy reachability and capabilities.
+- `proxy_server/`: exposes local HTTP/SOCKS proxy listeners backed by the pool.
+- `dashboard/`: Flask dashboard and JSON API.
+- `database.py`: SQLAlchemy models and database lifecycle.
+- `tests/`: automated regression tests.
+- `scripts/`: local setup, health checks, cleanup, and overlay helpers.
 
-## Protocol quality model
-
-Phase 8A made validation stricter:
-
-- `web_http_ok`: proxy can load an HTTP endpoint.
-- `web_https_ok`: proxy can load an HTTPS endpoint and return a real exit IP.
-- `remote_dns_ok`: proxy supports proxy-side DNS where applicable (`socks5h`, `socks4a`).
-- `telegram_ok`: proxy can reach Telegram API over HTTPS.
-- `exit_ip`: detected public exit IP.
-
-For production-like web browsing, prefer proxies with `web_https_ok=True`.
-For Telegram, prefer `web_https_ok=True`, `remote_dns_ok=True`, and `telegram_ok=True`.
-
-## Requirements
-
-- Linux/WSL recommended.
-- Python 3.10+.
-- `pip`.
-- Optional: MySQL for production, but SQLite is the default local database.
-
-Install dependencies:
+## Local project path
 
 ```bash
+cd /home/mahdi/projects/proxypool
+```
+
+## Development setup
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install --upgrade pip
 python3 -m pip install -r requirements.txt
+cp -n .env.example .env
 ```
 
-## Quick start – local SQLite
+Review `.env` before starting the application. Do not use example credentials or secrets outside a local development machine.
 
-```bash
-cd /home/mahdi/projects/proxyPool
-./scripts/dev_setup.sh
-./scripts/run_dashboard.sh
-```
+The local default database is SQLite:
 
-Open:
-
-```text
-http://localhost:5003
-```
-
-Default login is controlled by `dashboard/config.py` / environment settings. In the current dev fallback, use the existing admin credentials from previous phases.
-
-## Manual local run
-
-```bash
-cd /home/mahdi/projects/proxyPool
-export DB_TYPE=sqlite
-export SQLITE_DB_PATH=proxies.db
-python3 -c "from database import init_db; init_db()"
-python3 dashboard/app.py
-```
-
-## Importing proxies
-
-Use the dashboard Import tools, or run the importer if using its CLI/file workflow:
-
-```bash
-export DB_TYPE=sqlite
-python3 proxy_importer/app.py --help
-```
-
-## Running a monitor once
-
-Validate/revalidate proxies:
-
-```bash
-./scripts/run_monitor_once.sh
-```
-
-Common targeted examples:
-
-```bash
-# Re-scan legacy/reclassified rows after Normalize Legacy Statuses
-export DB_TYPE=sqlite
-python3 proxy_monitor/app.py --run-mode once --status dead,soft,revived,semi-revived --threads 50 --timeout 5 --probes 2 --geo false
-
-# Check only SOCKS5 candidates
-export DB_TYPE=sqlite
-python3 proxy_monitor/app.py --run-mode once --protocol socks5 --status untested,soft,dead --threads 50 --timeout 5 --probes 2 --geo false
-```
-
-## Server profiles and use cases
-
-Dashboard server profiles now include `Use Case Preset`:
-
-- **Web Browsing (HTTPS)**: requires `web_https_ok`.
-- **Telegram (HTTPS+DNS+TG)**: requires HTTPS, remote DNS, and Telegram reachability.
-- **Scraping / HTTP**: does not require HTTPS capability.
-- **Custom**: manually control flags.
-
-CLI equivalent example:
-
-```bash
-export DB_TYPE=sqlite
-python3 proxy_server/app.py   --protocol http   --bind 0.0.0.0   --listen_port 8080   --candidate_statuses alive   --require_web_https   --rotate better_cost
-```
-
-Test the local proxy server:
-
-```bash
-curl -x http://127.0.0.1:8080 https://api.ipify.org
-```
-
-## Health check
-
-```bash
-./scripts/health_check.sh
-```
-
-Repository hygiene check:
-
-```bash
-./scripts/repo_hygiene_check.sh
-```
-
-Cleanup generated runtime/cache files:
-
-```bash
-./scripts/clean_runtime.sh
-```
-
-This checks Python syntax, DB selection, dashboard imports, and key validation helpers.
-
-## SQLite vs MySQL
-
-Local/dev default is now SQLite:
-
-```bash
+```dotenv
 DB_TYPE=sqlite
 SQLITE_DB_PATH=proxies.db
 ```
 
-Production MySQL remains supported, but must be explicit:
+Start the dashboard:
 
 ```bash
+bash scripts/run_dashboard.sh
+```
+
+The default dashboard address is:
+
+```text
+http://127.0.0.1:5003
+```
+
+## Verification
+
+Run the complete local baseline check:
+
+```bash
+bash scripts/health_check.sh
+```
+
+Run tests only:
+
+```bash
+bash scripts/test.sh
+```
+
+Both commands use disposable SQLite databases and must not modify the working `proxies.db`.
+
+Check repository hygiene:
+
+```bash
+bash scripts/repo_hygiene_check.sh
+```
+
+## Overlay workflow
+
+Each approved change set is delivered as a ZIP overlay. From the repository root:
+
+```bash
+unzip -o /mnt/c/Users/Mahdi/Downloads/<overlay>.zip -d .
+```
+
+When the overlay includes an apply script, run it next. For example:
+
+```bash
+bash scripts/apply_phase0_cleanup.sh
+```
+
+Then verify before committing:
+
+```bash
+bash scripts/health_check.sh
+bash scripts/repo_hygiene_check.sh
+git status --short
+```
+
+A ZIP archive can add or overwrite files but cannot remove tracked files. Cleanup overlays therefore include an explicit, reviewable apply script for deletions and `git rm --cached` operations.
+
+## Runtime data
+
+The following are local runtime data and must not be committed:
+
+- `.env`
+- `proxies.db` and database backups
+- `.monitors.json`, `.servers.json`, `.server_config.json`
+- `progress/*.json`
+- logs, PID files, caches, and generated archives
+
+The cleanup script preserves the root database and current root runtime state while removing them from Git tracking.
+
+## Database selection
+
+SQLite is the supported local default. MySQL must be selected explicitly:
+
+```dotenv
 DB_TYPE=mysql
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=proxypool
-DB_PASS=...
+DB_PASS=<strong-password>
 DB_NAME=proxypool
 ```
 
-Do not switch production database settings without backing up first.
+Back up the active database before any destructive import, restore, or schema operation.
 
-## Recommended post-Phase-8 workflow
+## Current engineering status
 
-1. Start dashboard.
-2. Go to Settings.
-3. Click **⚡ Normalize Legacy Statuses**.
-4. Run a monitor over reclassified/old rows.
-5. Use Proxy Inventory `Ready: Web / Telegram / DNS` chips to inspect usable proxies.
-6. Start server profiles using the correct use-case preset.
-
-## Project notes
-
-Phase notes are kept in files named `PHASE*_NOTES.md`. The most important current ones:
-
-- `PHASE8A_PROTOCOL_QUALITY_NOTES.md`
-- `PHASE8B_USE_CASE_NOTES.md`
-- `PHASE8B1_SQLITE_DEFAULT_NOTES.md`
-- `RUNBOOK.md`
-
-## Safety
-
-- Do not deploy without explicit approval.
-- Back up `proxies.db` before destructive import/replace operations.
-- Treat public free proxy lists as untrusted and unstable.
-- Use `web_https_ok` / `telegram_ok` filters before using proxies for real traffic.
+The original dashboard and backend have known correctness, security, lifecycle, and maintainability issues. The verified baseline and rebuild sequence are documented in [`docs/BASELINE_AUDIT.md`](docs/BASELINE_AUDIT.md). The dashboard will be replaced rather than incrementally restyled.

@@ -1,226 +1,144 @@
-# ProxyPool Runbook
+# ProxyPool local runbook
 
-Operational guide for local development, validation, and production preparation.
+This runbook covers local WSL operation only. It does not authorize or perform deployment.
 
-## 1. Local development baseline
+## 1. Enter the project
 
 ```bash
-cd /home/mahdi/projects/proxyPool
-export DB_TYPE=sqlite
-export SQLITE_DB_PATH=proxies.db
-python3 -m pip install -r requirements.txt
-python3 -c "from database import init_db; init_db()"
-python3 dashboard/app.py
+cd /home/mahdi/projects/proxypool
+source .venv/bin/activate
 ```
 
-Dashboard:
+## 2. Verify an overlay before running the application
+
+```bash
+bash scripts/health_check.sh
+bash scripts/repo_hygiene_check.sh
+git diff --check
+git status --short
+```
+
+The test and health scripts use temporary SQLite files. They do not intentionally read from or write to `proxies.db`.
+
+## 3. Start the dashboard locally
+
+```bash
+bash scripts/run_dashboard.sh
+```
+
+Open:
 
 ```text
-http://localhost:5003
+http://127.0.0.1:5003
 ```
 
-## 2. First checks after every overlay
+Stop it with `Ctrl+C`. Do not expose the development server directly to a public network.
+
+## 4. Initialize or inspect SQLite
+
+A fresh database is initialized automatically when the Flask application is created. Manual initialization remains available:
 
 ```bash
-python3 -m compileall -q config.py database.py dashboard proxy_monitor proxy_importer proxy_server
-node --check dashboard/static/js/base.js
-./scripts/health_check.sh
-```
-
-Expected:
-
-- No Python syntax errors.
-- `base.js` passes `node --check`.
-- Health check reports `DB_TYPE sqlite` unless you explicitly configured MySQL.
-
-## 3. SQLite database operations
-
-### Initialize / upgrade schema
-
-```bash
-export DB_TYPE=sqlite
+DB_TYPE=sqlite SQLITE_DB_PATH=proxies.db \
 python3 -c "from database import init_db; init_db()"
 ```
 
-### Backup SQLite manually
+Inspect table names without changing data:
 
 ```bash
-cp proxies.db proxies_backup_$(date +%Y%m%d_%H%M%S).sqlite
+sqlite3 proxies.db '.tables'
 ```
 
-### Inspect capability distribution
+## 5. Back up SQLite safely
+
+Stop processes that write to the database, then use SQLite's backup command:
 
 ```bash
-export DB_TYPE=sqlite
+mkdir -p backups
+sqlite3 proxies.db ".backup 'backups/proxies_$(date +%Y%m%d_%H%M%S).sqlite'"
+```
+
+Do not rely on copying a live SQLite file while writers are active.
+
+## 6. Runtime cleanup
+
+Remove only caches, logs, and PID files:
+
+```bash
+bash scripts/clean_runtime.sh
+```
+
+Remove generated monitor/server state as well:
+
+```bash
+bash scripts/clean_runtime.sh --include-state
+```
+
+Remove local databases only when a verified backup exists and deletion is intentional:
+
+```bash
+bash scripts/clean_runtime.sh --include-db
+```
+
+## 7. Apply a ZIP overlay
+
+```bash
+cd /home/mahdi/projects/proxypool
+unzip -o /mnt/c/Users/Mahdi/Downloads/<overlay>.zip -d .
+```
+
+Read any included apply script before running it:
+
+```bash
+sed -n '1,240p' scripts/apply_phase0_cleanup.sh
+bash scripts/apply_phase0_cleanup.sh
+```
+
+Then run the verification commands in section 2. Commit only after local verification and review.
+
+## 8. Diagnose startup failures
+
+Confirm the selected database:
+
+```bash
 python3 - <<'PY'
-from database import db, Proxy
-from sqlalchemy import func
-with db.session() as s:
-    rows = s.query(
-        Proxy.status,
-        Proxy.web_https_ok,
-        Proxy.remote_dns_ok,
-        Proxy.telegram_ok,
-        func.count(Proxy.id),
-    ).group_by(
-        Proxy.status,
-        Proxy.web_https_ok,
-        Proxy.remote_dns_ok,
-        Proxy.telegram_ok,
-    ).all()
-    for row in rows:
-        print(row)
+from config import config
+print(config.DB_TYPE)
+print(config.get_database_url())
 PY
 ```
 
-## 4. Legacy status cleanup
-
-After Phase 5+, old rows may still be marked `revived` without capability validation.
-
-Recommended:
-
-1. Dashboard → Settings → **⚡ Normalize Legacy Statuses**.
-2. Run monitor again:
+Compile Python sources:
 
 ```bash
-export DB_TYPE=sqlite
-python3 proxy_monitor/app.py --run-mode once --status dead,soft,revived,semi-revived --threads 50 --timeout 5 --probes 2 --geo false
+python3 -m compileall -q config.py database.py dashboard proxy_importer proxy_monitor proxy_server
 ```
 
-3. Check Stats / Ready chips.
-
-## 5. What makes a proxy usable?
-
-### HTTP proxy
-
-A plain HTTP proxy can usually proxy:
-
-- HTTP websites directly.
-- HTTPS websites via the `CONNECT` method if implemented correctly.
-
-It should not be treated as web-ready unless `web_https_ok=True`.
-
-### HTTPS proxy label
-
-Some lists label a proxy as `https`, but it is actually a normal HTTP proxy that supports HTTPS `CONNECT` tunnels. Phase 8A detects this and can reclassify `https` → `http` when only fallback works.
-
-### SOCKS4 / SOCKS4A
-
-- `socks4` usually needs local DNS resolution.
-- `socks4a` supports remote DNS.
-- `remote_dns_ok=True` means remote DNS behavior worked.
-
-### SOCKS5 / SOCKS5H
-
-- `socks5` may resolve DNS locally.
-- `socks5h` resolves DNS through the proxy.
-- For privacy/leak-sensitive use cases, prefer `remote_dns_ok=True`.
-
-### Telegram
-
-Telegram-ready means HTTPS web validation plus a Telegram API reachability check. Use the Telegram server preset.
-
-## 6. Server profile presets
-
-Use dashboard preset unless you need CLI.
-
-### Web browsing
+Check JavaScript syntax when Node.js is installed:
 
 ```bash
-python3 proxy_server/app.py --protocol http --listen_port 8080 --candidate_statuses alive --require_web_https --rotate better_cost
+node --check dashboard/static/js/base.js
 ```
 
-### Telegram
+Run tests with verbose output:
 
 ```bash
-python3 proxy_server/app.py --protocol socks5 --listen_port 1080 --candidate_statuses alive --require_web_https --require_remote_dns --require_telegram --rotate better_cost
+bash scripts/test.sh
 ```
 
-### Scraping / HTTP-only
+## 9. Git safety
+
+Before committing:
 
 ```bash
-python3 proxy_server/app.py --protocol http --listen_port 8080 --candidate_statuses alive --rotate better_cost
+git status --short
+git diff --stat
+git diff --check
+bash scripts/repo_hygiene_check.sh
 ```
 
-## 7. Smoke tests
+Never commit `.env`, databases, runtime JSON, progress snapshots, logs, PID files, caches, or generated ZIP files.
 
-Dashboard:
+## 10. Deployment boundary
 
-```bash
-curl -I http://127.0.0.1:5003/login
-```
-
-Proxy server:
-
-```bash
-curl -x http://127.0.0.1:8080 https://api.ipify.org
-```
-
-DB import health:
-
-```bash
-export DB_TYPE=sqlite
-python3 - <<'PY'
-from database import db, Proxy
-with db.session() as s:
-    print('proxy_count', s.query(Proxy).count())
-PY
-```
-
-## 8. Production preparation checklist
-
-Before any production deployment:
-
-- [ ] Explicitly approve deployment target and method.
-- [ ] Create `.env` with strong secrets.
-- [ ] Decide SQLite vs MySQL.
-- [ ] If MySQL, set `DB_TYPE=mysql` explicitly and test connectivity.
-- [ ] Put dashboard behind a proper WSGI server / reverse proxy.
-- [ ] Enforce TLS at the reverse proxy.
-- [ ] Change dashboard/admin credentials.
-- [ ] Back up database.
-- [ ] Run health checks.
-- [ ] Run monitor and verify capability stats.
-- [ ] Use server profile presets instead of broad unfiltered proxy serving.
-
-## 9. Troubleshooting
-
-### App tries to connect to MySQL locally
-
-Check:
-
-```bash
-echo $DB_TYPE
-```
-
-Fix:
-
-```bash
-export DB_TYPE=sqlite
-export SQLITE_DB_PATH=proxies.db
-```
-
-Or ensure no `.env` overrides `DB_TYPE=mysql`.
-
-### `alive` count drops after Phase 8A
-
-Expected. Validation is stricter. The goal is fewer fake-alive proxies and more real-world usability.
-
-### Many `revived` rows with all capabilities false
-
-They are legacy rows. Run Normalize + re-monitor.
-
-### HTTPS site fails through an HTTP proxy
-
-HTTP proxy must support `CONNECT`. Only trust it for HTTPS sites if `web_https_ok=True`.
-
-## 10. Repository hygiene
-
-Runtime files should not be committed. Before committing a phase, run:
-
-```bash
-./scripts/clean_runtime.sh
-./scripts/repo_hygiene_check.sh
-```
-
-If `repo_hygiene_check.sh` reports tracked runtime artifacts, remove them from git tracking with `git rm --cached` as shown by the script. This keeps local files on disk while preventing future commits of DB/log/progress/cache files.
+No local script in the rebuild workflow should deploy, restart production services, edit reverse-proxy configuration, or modify a remote host. Deployment requires a separate explicit instruction and a separately reviewed procedure.

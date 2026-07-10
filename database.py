@@ -2,7 +2,7 @@
 Database abstraction layer with SQLAlchemy
 Provides connection pooling and ORM models for MySQL
 """
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Index, event, Boolean, JSON
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Index, Boolean, JSON
 from sqlalchemy.orm import declarative_base, sessionmaker, scoped_session
 from sqlalchemy.pool import QueuePool
 from contextlib import contextmanager
@@ -180,7 +180,7 @@ class User(Base):
     username = Column(String(50), unique=True, nullable=False)
     password_hash = Column(String(128), nullable=False)
     role = Column(String(20), default='user')  # admin, superadmin, user
-    custom_permissions = Column(JSON, default={})
+    custom_permissions = Column(JSON, default=dict)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=utcnow)
     last_login = Column(DateTime, nullable=True)
@@ -276,10 +276,14 @@ class Database:
         # Create session factory
         self.Session = scoped_session(sessionmaker(bind=self.engine))
     
-    def create_tables(self):
-        """Create all tables and apply additive schema upgrades."""
+    def ensure_schema(self):
+        """Create missing tables and apply additive schema upgrades."""
         Base.metadata.create_all(self.engine)
         self.ensure_schema_upgrades()
+
+    def create_tables(self):
+        """Initialize all tables and report completion for CLI callers."""
+        self.ensure_schema()
         print("[+] Database tables created successfully")
 
     def ensure_schema_upgrades(self):
@@ -367,8 +371,13 @@ def init_db():
     db.create_tables()
 
 def ensure_db_schema():
-    """Apply additive schema upgrades without recreating tables."""
-    db.ensure_schema_upgrades()
+    """Ensure a fresh database is usable and upgrade existing schemas.
+
+    ``create_all`` is idempotent: it creates missing tables on a new install
+    without deleting or rewriting existing data. Additive upgrades are then
+    applied for columns introduced after the initial schema.
+    """
+    db.ensure_schema()
 
 def get_db_session():
     """Get database session context manager"""

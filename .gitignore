@@ -63,3 +63,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Local safety backups created by overlay cleanup scripts
+.local-backup/

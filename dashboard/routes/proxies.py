@@ -1,9 +1,13 @@
+import json
+
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy import or_, desc, asc
+from sqlalchemy.exc import IntegrityError
 from database import Proxy
 from proxy_monitor.utils.validation import validate_proxy
 from proxy_importer.utils.importer import normalize_proxy_line
 
+from dashboard.config import PROTOCOLS
 from dashboard.decorators import login_required, require_permission, get_user_proxy_filters, get_current_user
 from dashboard.utils.helpers import clamp_int
 
@@ -16,6 +20,39 @@ def get_db():
         from database import db
         g.db_session = db.get_session()
     return g.db_session
+
+
+def validate_proxy_payload(data):
+    """Validate the minimum proxy identity accepted by CRUD endpoints."""
+    if not isinstance(data, dict):
+        return None, "A JSON object is required"
+
+    protocol = str(data.get("protocol", "")).strip().lower()
+    host = str(data.get("ip", "")).strip()
+    username = str(data.get("username", "") or "")
+    password = str(data.get("password", "") or "")
+
+    if protocol not in PROTOCOLS:
+        return None, f"protocol must be one of: {', '.join(PROTOCOLS)}"
+    if not host or len(host) > 255 or any(char.isspace() for char in host):
+        return None, "ip/host is required and must not contain whitespace"
+
+    try:
+        port = int(data.get("port"))
+    except (TypeError, ValueError):
+        return None, "port must be an integer between 1 and 65535"
+    if not 1 <= port <= 65535:
+        return None, "port must be an integer between 1 and 65535"
+    if len(username) > 255 or len(password) > 255:
+        return None, "username and password must be at most 255 characters"
+
+    return {
+        "protocol": protocol,
+        "ip": host,
+        "port": port,
+        "username": username,
+        "password": password,
+    }, None
 
 
 @proxies_bp.route("/api/proxies", methods=["GET"])
@@ -86,13 +123,12 @@ def api_proxies():
     if capability:
         caps = {c.strip() for c in capability.split(',') if c.strip()}
         if 'web_https' in caps:
-            query = query.filter(Proxy.web_https_ok == True)
+            query = query.filter(Proxy.web_https_ok.is_(True))
         if 'remote_dns' in caps:
-            query = query.filter(Proxy.remote_dns_ok == True)
+            query = query.filter(Proxy.remote_dns_ok.is_(True))
         if 'telegram' in caps:
-            query = query.filter(Proxy.telegram_ok == True)
+            query = query.filter(Proxy.telegram_ok.is_(True))
 
-    import json
     try:
         adv_rules = json.loads(adv_search_json)
         for rule in adv_rules:
@@ -118,7 +154,7 @@ def api_proxies():
                 query = query.filter(column >= val)
             elif op == 'lte':
                 query = query.filter(column <= val)
-    except:
+    except (TypeError, ValueError, json.JSONDecodeError):
         pass
 
     total = query.count()
@@ -144,23 +180,22 @@ def api_proxies():
 @login_required
 @require_permission("proxies.add")
 def api_proxies_add():
-    session = get_db()
-    data = request.json
+    db_session = get_db()
+    payload, error = validate_proxy_payload(request.get_json(silent=True))
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+
     try:
-        proxy = Proxy(
-            protocol=data.get("protocol"),
-            ip=data.get("ip"),
-            port=data.get("port"),
-            username=data.get("username", ""),
-            password=data.get("password", ""),
-            cost=1.0
-        )
-        session.add(proxy)
-        session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"success": False, "error": str(e)})
+        proxy = Proxy(**payload, cost=1.0)
+        db_session.add(proxy)
+        db_session.commit()
+        return jsonify({"success": True, "id": proxy.id}), 201
+    except IntegrityError:
+        db_session.rollback()
+        return jsonify({"success": False, "error": "Proxy already exists"}), 409
+    except Exception:
+        db_session.rollback()
+        return jsonify({"success": False, "error": "Could not add proxy"}), 500
 
 
 @proxies_bp.route("/api/proxies/bulk", methods=["POST"])
@@ -180,16 +215,20 @@ def api_proxies_bulk():
             proto, ip, port, user, pwd = parsed
             user = user or ""
             pwd = pwd or ""
-            try:
-                existing = session.query(Proxy).filter_by(
-                    protocol=proto, ip=ip, port=port, username=user, password=pwd
-                ).first()
-                if not existing:
-                    proxy = Proxy(protocol=proto, ip=ip, port=port, username=user, password=pwd, cost=1.0)
-                    session.add(proxy)
-                    added += 1
-            except:
-                pass
+            existing = session.query(Proxy).filter_by(
+                protocol=proto, ip=ip, port=port, username=user, password=pwd
+            ).first()
+            if not existing:
+                proxy = Proxy(
+                    protocol=proto,
+                    ip=ip,
+                    port=port,
+                    username=user,
+                    password=pwd,
+                    cost=1.0,
+                )
+                session.add(proxy)
+                added += 1
     session.commit()
     return jsonify({"success": True, "added": added})
 
@@ -271,7 +310,6 @@ def api_proxies_bulk_delete():
     try:
         query = session.query(Proxy)
         
-        filter_type = data.get("filter", "all")
         protocol = data.get("protocol", "all")
         status = data.get("status", "all")
         

@@ -12,41 +12,49 @@ for arg in "$@"; do
     --include-state) include_state=true ;;
     -h|--help)
       cat <<'HELP'
-Usage: ./scripts/clean_runtime.sh [--include-state] [--include-db]
+Usage: bash scripts/clean_runtime.sh [--include-state] [--include-db]
 
-Safely removes generated runtime/cache files:
-  - __pycache__ directories
-  - *.pyc files
-  - *.log / *.pid files
+Default cleanup removes project-generated Python caches, logs, and PID files.
+It does not traverse virtual environments and does not remove the active DB or
+monitor/server runtime state.
 
 Optional:
-  --include-state  also removes .monitors.json/.servers.json/progress/*.json
-  --include-db     also removes local SQLite DB/backups (*.db, *.sqlite, backup SQL)
-
-Default mode does NOT remove DB or dashboard/server runtime state.
+  --include-state  remove monitor/server state and progress snapshots
+  --include-db     remove local SQLite databases/backups (destructive)
 HELP
       exit 0
       ;;
-    *) echo "Unknown arg: $arg" >&2; exit 2 ;;
+    *) echo "Unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
 
-echo "[clean] Removing Python caches"
-find . -type d -name '__pycache__' -prune -exec rm -rf {} +
-find . -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
+echo "[clean] Python caches"
+rm -rf __pycache__
+for root in dashboard proxy_importer proxy_monitor proxy_server tests; do
+  [[ -e "$root" ]] || continue
+  find "$root" -type d -name '__pycache__' -prune -exec rm -rf {} +
+  find "$root" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
+done
 
-echo "[clean] Removing logs and pid files"
-find . -maxdepth 3 -type f \( -name '*.log' -o -name '*.pid' \) -delete
+echo "[clean] Logs and PID files"
+find . -maxdepth 1 -type f \( -name '*.log' -o -name '*.pid' \) -delete
+for root in dashboard proxy_importer proxy_monitor proxy_server progress tests; do
+  [[ -d "$root" ]] || continue
+  find "$root" -maxdepth 3 -type f \( -name '*.log' -o -name '*.pid' \) -delete
+done
 
 if [[ "$include_state" == true ]]; then
-  echo "[clean] Removing runtime state files"
-  rm -f .monitors.json .servers.json .server_config.json dashboard/.monitors.json dashboard/.servers.json
+  echo "[clean] Runtime state"
+  rm -f .monitors.json .servers.json .server_config.json
+  rm -f dashboard/.monitors.json dashboard/.servers.json
   rm -f progress/*.json 2>/dev/null || true
 fi
 
 if [[ "$include_db" == true ]]; then
-  echo "[clean] Removing local DB/backups"
-  rm -f *.db *.sqlite *.sqlite3 proxies_backup_*.sql proxies_backup_*.sqlite proxies_backup_before_import_*.sqlite
+  echo "[clean] Local databases and backups"
+  rm -f -- *.db *.sqlite *.sqlite3
+  rm -f -- proxies_backup_*.sql proxies_backup_*.sqlite
+  rm -f -- proxies_backup_before_import_*.sqlite
 fi
 
 echo "[OK] Runtime cleanup complete"

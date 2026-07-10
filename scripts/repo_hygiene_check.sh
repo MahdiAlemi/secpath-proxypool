@@ -4,13 +4,14 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo "[skip] Not inside a git repository"
+  echo "[skip] Not inside a Git repository"
   exit 0
 fi
 
 bad_patterns=(
   '*.pyc'
   '__pycache__/*'
+  '*/__pycache__/*'
   '*.log'
   '*.pid'
   '*.db'
@@ -22,31 +23,32 @@ bad_patterns=(
   '.server_config.json'
   'dashboard/.monitors.json'
   'dashboard/.servers.json'
+  'PHASE*_NOTES.md'
+  'patch.py'
+  'patch.sh'
 )
 
-found=false
-for pattern in "${bad_patterns[@]}"; do
-  while IFS= read -r path; do
-    [[ -z "$path" ]] && continue
-    if [[ "$found" == false ]]; then
-      echo "[WARN] Runtime/cache artifacts are tracked by git:"
-      found=true
-    fi
-    echo "  - $path"
-  done < <(git ls-files -- "$pattern")
-done
+mapfile -t bad_paths < <(
+  for pattern in "${bad_patterns[@]}"; do
+    git ls-files -- "$pattern"
+  done | sort -u
+)
 
-if [[ "$found" == true ]]; then
-  cat <<'HELP'
-
-Recommended cleanup (keeps local files, removes them from future commits):
-  git rm --cached -r __pycache__ dashboard/__pycache__ proxy_importer/__pycache__ proxy_monitor/__pycache__ proxy_server/__pycache__ tests/__pycache__ 2>/dev/null || true
-  git rm --cached -r progress 2>/dev/null || true
-  git rm --cached proxies.db .monitors.json .servers.json .server_config.json dashboard/.monitors.json dashboard/.servers.json 2>/dev/null || true
-  git add .gitignore scripts/clean_runtime.sh scripts/repo_hygiene_check.sh PHASE11_REPO_HYGIENE_NOTES.md
-  git commit -m "Phase 11: Improve repository hygiene"
-HELP
+if ((${#bad_paths[@]} > 0)); then
+  echo "[FAIL] Generated, runtime, or obsolete files are tracked by Git:"
+  printf '  - %s\n' "${bad_paths[@]}"
+  echo
+  echo "Run the cleanup apply script included in the foundation overlay:"
+  echo "  bash scripts/apply_phase0_cleanup.sh"
   exit 1
+fi
+
+if git ls-files -s | awk '$1 == "100755" {print $4}' | grep -Ev '^(scripts/|dashboard/app.py$|proxy_importer/app.py$|proxy_monitor/app.py$|proxy_server/app.py$|migrate.py$)' >/tmp/proxypool-executable-files.$$; then
+  echo "[WARN] Non-entrypoint source files still have executable Git mode:"
+  sed 's/^/  - /' /tmp/proxypool-executable-files.$$
+  rm -f /tmp/proxypool-executable-files.$$
+else
+  rm -f /tmp/proxypool-executable-files.$$
 fi
 
 echo "[OK] Repository hygiene check passed"
