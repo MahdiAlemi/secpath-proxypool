@@ -26,7 +26,7 @@ function toggleRunModeOptions() {
   const intervalOption = document.getElementById('interval-option');
   const scheduleOption = document.getElementById('schedule-option');
   const customOption = document.getElementById('custom-option');
-  
+
   if (mode === 'once') {
     optionsDiv.style.display = 'none';
   } else if (mode === 'infinite' || mode === 'restart') {
@@ -99,7 +99,7 @@ function addSearchRule(rule = null) {
   const div = document.createElement('div');
   div.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap';
   div.dataset.id = id;
-  
+
   if (searchRules.length > 0) {
     const logic = document.createElement('select');
     logic.style.cssText = 'padding:6px;border-radius:4px;border:1px solid var(--border)';
@@ -107,32 +107,32 @@ function addSearchRule(rule = null) {
     if (rule) logic.value = rule.logic || 'AND';
     div.appendChild(logic);
   }
-  
+
   const colSelect = document.createElement('select');
   colSelect.style.cssText = 'padding:6px;border-radius:4px;border:1px solid var(--border)';
   colSelect.innerHTML = searchColumns.map(c => '<option value="' + c.value + '">' + c.label + '</option>').join('');
   if (rule) colSelect.value = rule.column;
   div.appendChild(colSelect);
-  
+
   const opSelect = document.createElement('select');
   opSelect.style.cssText = 'padding:6px;border-radius:4px;border:1px solid var(--border)';
   opSelect.innerHTML = searchOperators.map(o => '<option value="' + o.value + '">' + o.label + '</option>').join('');
   if (rule) opSelect.value = rule.operator;
   div.appendChild(opSelect);
-  
+
   const valueInput = document.createElement('input');
   valueInput.type = 'text';
   valueInput.placeholder = 'Value';
   valueInput.style.cssText = 'padding:6px;border-radius:4px;border:1px solid var(--border)';
   if (rule) valueInput.value = rule.value;
   div.appendChild(valueInput);
-  
+
   const removeBtn = document.createElement('button');
   removeBtn.innerHTML = '&times;';
   removeBtn.style.cssText = 'background:var(--danger);color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer';
   removeBtn.onclick = function() { div.remove(); updateSearchRules(); };
   div.appendChild(removeBtn);
-  
+
   container.appendChild(div);
 }
 
@@ -197,8 +197,9 @@ function toggleTheme() {
 }
 
 function initTheme() {
-  var saved = localStorage.getItem('theme') || 'light';
-  document.documentElement.setAttribute('data-theme', saved);
+  var saved = localStorage.getItem('theme');
+  var preferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', saved || preferred);
 }
 
 function copyProxy(text) {
@@ -288,14 +289,14 @@ async function loadCurrentUserPermissions() {
   applyTabPermissions();
 }
 
-let userProxyFilters = { statuses: [], protocols: [] };
+let userProxyFilters = window.initialProxyFilters || { statuses: [], protocols: [] };
 
 async function loadUserProxyFilters() {
   if (userProxyFilters.statuses.length > 0 || userProxyFilters.protocols.length > 0) {
     applyProxyFiltersToUI();
     return;
   }
-  
+
   try {
     var res = await authFetch('/api/proxies/my-filters');
     if (res.ok) {
@@ -309,7 +310,7 @@ async function loadUserProxyFilters() {
 
 function applyProxyFiltersToUI() {
   var statusFilters = ['alive', 'flaky', 'cooling', 'soft', 'revived', 'semi-revived', 'dead', 'untested'];
-  
+
   statusFilters.forEach(function(status) {
     var btn = document.querySelector('.stat-card[data-status="' + status + '"]');
     if (btn) {
@@ -321,7 +322,7 @@ function applyProxyFiltersToUI() {
       }
     }
   });
-  
+
   var protoSelect = document.querySelector('select[onchange="changeProtoFilter()"]');
   if (protoSelect && userProxyFilters.protocols.length > 0) {
     protoSelect.value = userProxyFilters.protocols[0];
@@ -536,16 +537,16 @@ async function fetchStats() {
 
 function toggleColumn(col, show) {
   if (!hasPermission('proxies.columns')) return;
-  
+
   var display = show ? '' : 'none';
   var header = document.querySelector('#proxies-table th[data-col="' + col + '"]');
   var colIdx = header ? (Array.prototype.indexOf.call(header.parentNode.children, header) + 1) : null;
-  
+
   if (colIdx) {
     document.querySelectorAll('#proxies-table th:nth-child(' + colIdx + ')').forEach(function(el) { el.style.display = display; });
     document.querySelectorAll('#proxies-table td:nth-child(' + colIdx + ')').forEach(function(el) { el.style.display = display; });
   }
-  
+
   var hidden = JSON.parse(localStorage.getItem('hiddenColumns') || '{}');
   hidden[col] = !show;
   localStorage.setItem('hiddenColumns', JSON.stringify(hidden));
@@ -596,8 +597,21 @@ function setAutoRefreshInterval(sec) {
 var currentTab = 'cockpit';
 
 
-function cockpitMetric(label, value, hint, color) {
-  return '<div class="cockpit-metric"><span>' + escapeHtml(label) + '</span><strong style="color:' + (color || 'var(--text)') + '">' + escapeHtml(value) + '</strong><small>' + escapeHtml(hint || '') + '</small></div>';
+function cockpitMetricCard(label, value, hint, tone) {
+  return '<article class="overview-metric" data-tone="' + escapeHtml(tone || 'neutral') + '">' +
+    '<div class="overview-metric-head"><span class="overview-metric-label">' + escapeHtml(label) + '</span><span class="overview-metric-dot"></span></div>' +
+    '<strong class="overview-metric-value">' + escapeHtml(value) + '</strong>' +
+    '<span class="overview-metric-hint">' + escapeHtml(hint || '') + '</span>' +
+  '</article>';
+}
+
+function cockpitReadinessRow(label, value, total, hint, tone) {
+  var percent = total > 0 ? Math.max(0, Math.min(100, Math.round((value / total) * 100))) : 0;
+  return '<div class="readiness-row" data-tone="' + escapeHtml(tone || 'neutral') + '">' +
+    '<div class="readiness-copy"><strong>' + escapeHtml(label) + '</strong><small>' + escapeHtml(hint || '') + '</small></div>' +
+    '<div class="readiness-track"><span style="width:' + percent + '%"></span></div>' +
+    '<div class="readiness-value">' + escapeHtml(value) + ' <small>/ ' + escapeHtml(total) + '</small></div>' +
+  '</div>';
 }
 
 function cockpitAction(text, tone) {
@@ -605,79 +619,131 @@ function cockpitAction(text, tone) {
   return '<div class="cockpit-action' + cls + '">' + escapeHtml(text) + '</div>';
 }
 
+async function cockpitFetch(url) {
+  try {
+    var response = await authFetch(url);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (_error) {
+    return null;
+  }
+}
+
 async function loadCockpit() {
   var health = document.getElementById('cockpit-health');
   var readiness = document.getElementById('cockpit-readiness');
   var runtime = document.getElementById('cockpit-runtime');
   var actions = document.getElementById('cockpit-next-actions');
+  var scoreElement = document.getElementById('cockpit-readiness-score');
+  var captionElement = document.getElementById('cockpit-readiness-caption');
   if (!health || !readiness || !runtime || !actions) return;
-  health.innerHTML = readiness.innerHTML = runtime.innerHTML = actions.innerHTML = '<div style="color:var(--muted);font-size:12px">Loading cockpit...</div>';
-  try {
-    var statsRes = await authFetch('/api/stats');
-    var stats = await statsRes.json();
-    var diagRes = await authFetch('/api/settings/diagnostics');
-    var diag = await diagRes.json();
-    var serverRes = await authFetch('/api/server');
-    var serverData = await serverRes.json();
-    var servers = serverData.servers || {};
-    var serverPorts = Object.keys(servers);
-    var runningServers = serverPorts.filter(function(p) { return servers[p] && servers[p].running; }).length;
-    var counts = (diag && diag.counts) || {};
-    var db = (diag && diag.db) || {};
-    var total = stats.total || counts.total || 0;
-    var alive = stats.alive || counts.alive || 0;
-    var webReady = stats.web_ready || counts.web_ready || 0;
-    var telegramReady = stats.telegram_ready || counts.telegram_ready || 0;
-    var fullCap = stats.full_capability || counts.full_capability || 0;
-    var legacy = counts.legacy_revived || 0;
 
-    var readinessPct = alive ? Math.round((webReady / alive) * 100) : 0;
-    health.innerHTML =
-      cockpitMetric('Database', (db.type || 'sqlite').toUpperCase(), db.sqlite_size_mb != null ? Number(db.sqlite_size_mb).toFixed(2) + ' MB' : '', 'var(--accent)') +
-      cockpitMetric('Total proxies', total, 'inventory size') +
-      cockpitMetric('Alive', alive, 'currently usable status', 'var(--success)') +
-      cockpitMetric('Web readiness', readinessPct + '%', 'alive proxies with HTTPS OK', readinessPct >= 80 ? 'var(--success)' : 'var(--accent)');
+  health.innerHTML = '<div class="metric-skeleton"></div><div class="metric-skeleton"></div><div class="metric-skeleton"></div><div class="metric-skeleton"></div>';
+  readiness.innerHTML = '<div class="section-hint">Calculating capability coverage…</div>';
+  runtime.innerHTML = '<div class="section-hint">Reading runtime state…</div>';
+  actions.innerHTML = '<div class="section-hint">Preparing the priority queue…</div>';
 
-    readiness.innerHTML =
-      cockpitMetric('Web-ready', webReady, 'safe for HTTPS browsing', 'var(--success)') +
-      cockpitMetric('Telegram-ready', telegramReady, 'Telegram API reachable', '#0088cc') +
-      cockpitMetric('Full-capability', fullCap, 'HTTPS + DNS + Telegram', 'var(--accent)') +
-      cockpitMetric('Legacy revived', legacy, 'needs normalize/re-monitor', legacy ? 'var(--danger)' : 'var(--success)');
+  var results = await Promise.all([
+    cockpitFetch('/api/stats'),
+    cockpitFetch('/api/settings/diagnostics'),
+    cockpitFetch('/api/server'),
+    cockpitFetch('/api/monitor')
+  ]);
+  var stats = results[0] || {};
+  var diag = results[1] || {};
+  var serverData = results[2] || {};
+  var monitorData = results[3] || {};
 
-    runtime.innerHTML =
-      '<div class="cockpit-runtime-row"><span>Server profiles</span><strong>' + serverPorts.length + '</strong></div>' +
-      '<div class="cockpit-runtime-row"><span>Running servers</span><strong>' + runningServers + '</strong></div>' +
-      '<div class="cockpit-runtime-row"><span>Progress files</span><strong>' + (((diag.runtime || {}).progress_files) || 0) + '</strong></div>' +
-      '<div class="cockpit-runtime-row"><span>Last scan</span><strong>' + escapeHtml(stats.last_scan ? new Date(stats.last_scan).toLocaleString() : '-') + '</strong></div>';
-
-    var recs = (diag.recommendations || []).slice();
-    if (total === 0) recs.unshift('Import fresh proxy sources to start building inventory.');
-    if (total > 0 && alive === 0) recs.unshift('Run a monitor to promote real working proxies.');
-    if (legacy > 0) recs.unshift('Normalize legacy statuses, then re-run monitor validation.');
-    if (webReady > 0 && runningServers === 0) recs.unshift('Create a Web Browsing server profile from the server builder.');
-    actions.innerHTML = (recs.length ? recs : ['System looks ready. Keep monitoring and serving by use case.']).slice(0, 6).map(function(r, i) {
-      return cockpitAction(r, i === 0 && (legacy > 0 || alive === 0) ? 'danger' : (i === 0 ? 'ok' : ''));
-    }).join('');
-  } catch (e) {
-    health.innerHTML = readiness.innerHTML = runtime.innerHTML = '';
-    actions.innerHTML = cockpitAction('Cockpit failed to load: ' + (e.message || e), 'danger');
+  if (!results[0] && !results[1]) {
+    health.innerHTML = '';
+    readiness.innerHTML = '';
+    runtime.innerHTML = '';
+    actions.innerHTML = cockpitAction('The overview is unavailable for this account or the API could not be reached.', 'danger');
+    if (scoreElement) scoreElement.textContent = '—';
+    if (captionElement) captionElement.textContent = 'Overview unavailable';
+    return;
   }
+
+  var counts = diag.counts || {};
+  var total = Number(stats.total != null ? stats.total : counts.total || 0);
+  var alive = Number(stats.alive != null ? stats.alive : counts.alive || 0);
+  var webReady = Number(stats.web_ready != null ? stats.web_ready : counts.web_ready || 0);
+  var dnsReady = Number(stats.dns_ready != null ? stats.dns_ready : counts.dns_ready || 0);
+  var telegramReady = Number(stats.telegram_ready != null ? stats.telegram_ready : counts.telegram_ready || 0);
+  var fullCap = Number(stats.full_capability != null ? stats.full_capability : counts.full_capability || 0);
+  var legacy = Number(counts.legacy_revived || 0);
+
+  var servers = serverData.servers || {};
+  var monitors = monitorData.monitors || {};
+  var serverList = Object.keys(servers).map(function (key) { return servers[key] || {}; });
+  var monitorList = Object.keys(monitors).map(function (key) { return monitors[key] || {}; });
+  var runningServers = serverList.filter(function (item) { return Boolean(item.running || item.starting); }).length;
+  var runningMonitors = monitorList.filter(function (item) { return Boolean(item.running || item.starting); }).length;
+  var activeRuntimes = runningServers + runningMonitors;
+
+  var inventoryScore = total > 0 ? Math.min(100, 25 + Math.round((alive / total) * 25)) : 0;
+  var webScore = alive > 0 ? Math.round((webReady / alive) * 30) : 0;
+  var fullScore = alive > 0 ? Math.round((fullCap / alive) * 20) : 0;
+  var score = Math.max(0, Math.min(100, inventoryScore + webScore + fullScore));
+  var scoreTone = score >= 75 ? 'success' : (score >= 40 ? 'warning' : 'neutral');
+
+  health.innerHTML =
+    cockpitMetricCard('Inventory', total.toLocaleString(), 'all imported candidates') +
+    cockpitMetricCard('Alive pool', alive.toLocaleString(), total ? Math.round((alive / total) * 100) + '% of inventory' : 'no candidates yet', alive > 0 ? 'success' : 'warning') +
+    cockpitMetricCard('Web-ready', webReady.toLocaleString(), alive ? Math.round((webReady / alive) * 100) + '% of alive pool' : 'run validation first', webReady > 0 ? 'success' : 'warning') +
+    cockpitMetricCard('Active runtimes', activeRuntimes.toLocaleString(), runningMonitors + ' ' + (runningMonitors === 1 ? 'monitor' : 'monitors') + ' · ' + runningServers + ' ' + (runningServers === 1 ? 'server' : 'servers'), activeRuntimes > 0 ? 'success' : 'neutral');
+
+  readiness.innerHTML =
+    cockpitReadinessRow('HTTPS browsing', webReady, alive, 'Verified HTTPS capability', webReady && webReady === alive ? 'success' : 'neutral') +
+    cockpitReadinessRow('Remote DNS', dnsReady, alive, 'DNS resolved through the proxy', dnsReady && dnsReady === alive ? 'success' : 'neutral') +
+    cockpitReadinessRow('Telegram', telegramReady, alive, 'Telegram endpoint reachable', telegramReady && telegramReady === alive ? 'success' : 'neutral') +
+    cockpitReadinessRow('Full capability', fullCap, alive, 'HTTPS, DNS, and Telegram together', fullCap && fullCap === alive ? 'success' : 'warning');
+
+  var db = diag.db || {};
+  runtime.innerHTML =
+    '<div class="cockpit-runtime-row"><span>Database</span><strong>' + escapeHtml(String(db.type || 'unknown').toUpperCase()) + (db.sqlite_size_mb != null ? ' · ' + Number(db.sqlite_size_mb).toFixed(2) + ' MB' : '') + '</strong></div>' +
+    '<div class="cockpit-runtime-row"><span>Validation jobs</span><strong class="runtime-status">' + runningMonitors + ' active / ' + monitorList.length + ' profiles</strong></div>' +
+    '<div class="cockpit-runtime-row"><span>Serving routes</span><strong class="runtime-status">' + runningServers + ' active / ' + serverList.length + ' profiles</strong></div>' +
+    '<div class="cockpit-runtime-row"><span>Last validation</span><strong>' + escapeHtml(stats.last_scan ? new Date(stats.last_scan).toLocaleString() : 'Not yet') + '</strong></div>';
+
+  var recommendations = (diag.recommendations || []).slice();
+  if (total === 0) recommendations.unshift('Import a fresh source to create the first inventory candidates.');
+  else if (alive === 0) recommendations.unshift('Run validation to identify working proxies in the current inventory.');
+  else if (webReady === 0) recommendations.unshift('Validate HTTPS capability before routing browser traffic.');
+  else if (runningServers === 0) recommendations.unshift('Create a serving profile when you are ready to expose a local route.');
+  if (legacy > 0) recommendations.unshift('Normalize ' + legacy + ' legacy status records, then validate them again.');
+  if (!recommendations.length) recommendations.push('The pool is healthy. Keep validation fresh and review failed routes periodically.');
+  actions.innerHTML = recommendations.slice(0, 5).map(function (item, index) {
+    var tone = index === 0 && (total === 0 || alive === 0 || legacy > 0) ? 'danger' : (index === 0 ? 'ok' : '');
+    return cockpitAction(item, tone);
+  }).join('');
+
+  if (scoreElement) scoreElement.textContent = score + '%';
+  if (captionElement) {
+    captionElement.textContent = score >= 75 ? 'Pool coverage is ready for controlled traffic.' : (score >= 40 ? 'Usable coverage exists, but validation gaps remain.' : 'Import and validate proxies to build readiness.');
+  }
+  var orb = document.getElementById('cockpit-readiness-orb');
+  if (orb) orb.dataset.tone = scoreTone;
 }
 
-function showTab(tab, evt) {
+function showTab(tab, evt, options) {
+  var allowedTabs = ['cockpit', 'proxies', 'import', 'monitor', 'server', 'stats'];
+  if (!allowedTabs.includes(tab)) tab = 'cockpit';
   currentTab = tab;
-  var guide = document.querySelector('.product-guide');
-  if (guide) guide.style.display = ['proxies','import','monitor','server'].includes(tab) ? 'grid' : 'none';
 
-  document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.add('hidden'); });
+  document.querySelectorAll('.tab-content').forEach(function (element) { element.classList.add('hidden'); });
   var targetTab = document.getElementById('tab-' + tab);
   if (targetTab) targetTab.classList.remove('hidden');
 
-  document.querySelectorAll('.nav-btn').forEach(function(el) { el.classList.remove('active'); });
-  var source = (evt && evt.target) || (typeof event !== 'undefined' && event && event.target) || null;
-  var btn = source && source.closest ? source.closest('.nav-btn') : null;
-  if (!btn) btn = document.querySelector('.nav-btn[onclick*="showTab(\'' + tab + '\'"]');
-  if (btn) btn.classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(function (element) { element.classList.remove('active'); });
+  var button = document.querySelector('.nav-btn[data-tab="' + tab + '"]');
+  if (!button) {
+    var source = evt && (evt.currentTarget || evt.target);
+    button = source && source.closest ? source.closest('.nav-btn') : null;
+  }
+  if (button) button.classList.add('active');
+
+  if (typeof window.updateShellForTab === 'function') window.updateShellForTab(tab, options || {});
 
   if (tab === 'cockpit') loadCockpit();
   if (tab === 'proxies') {
@@ -688,6 +754,8 @@ function showTab(tab, evt) {
   if (tab === 'stats') loadStats();
   if (tab === 'monitor') checkMonitorStatus();
   if (tab === 'server') checkServerStatus();
+
+  if (!options || options.scroll !== false) window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
 
@@ -732,14 +800,14 @@ function showConfirm(title, message, onConfirm, options) {
   options = options || {};
   var confirmText = options.confirmText || 'Confirm';
   var confirmClass = options.confirmClass || 'btn-danger';
-  
+
   document.getElementById('confirm-title').textContent = title;
   document.getElementById('confirm-message').textContent = message;
-  
+
   var btn = document.getElementById('confirm-btn');
   btn.textContent = confirmText;
   btn.className = 'btn ' + confirmClass;
-  
+
   confirmCallback = onConfirm;
   document.getElementById('modal-confirm').classList.add('active');
 }
@@ -802,10 +870,10 @@ function showAddUserModal() {
   document.getElementById('user-password').value = '';
   document.getElementById('user-role').value = 'user';
   document.getElementById('user-active').checked = true;
-  
+
   document.querySelectorAll('.proxy-filter-status').forEach(function(cb) { cb.checked = true; });
   document.querySelectorAll('.proxy-filter-proto').forEach(function(cb) { cb.checked = true; });
-  
+
   loadPermissions().then(function(data) {
     if (!data) return;
     var rolePerms = data.role_permissions['user'] || [];
@@ -819,7 +887,7 @@ function showAddUserModal() {
     });
     updateRolePermissions();
   });
-  
+
   document.getElementById('modal-user-form').classList.add('active');
 }
 
@@ -829,20 +897,20 @@ async function editUser(id) {
   var users = await res.json();
   var user = users.find(function(u) { return u.id === id; });
   if (!user) return;
-  
+
   document.getElementById('edit-user-id').value = id;
   document.getElementById('user-form-title').innerText = 'Edit User';
   document.getElementById('user-username').value = user.username;
   document.getElementById('user-password').value = '';
   document.getElementById('user-role').value = user.role;
   document.getElementById('user-active').checked = user.is_active;
-  
+
   var permData = await loadPermissions();
   if (!permData) return;
   var rolePerms = permData.role_permissions[user.role] || [];
   var userAddPerms = user.custom_permissions && user.custom_permissions.add ? user.custom_permissions.add : [];
   var userRemovePerms = user.custom_permissions && user.custom_permissions.remove ? user.custom_permissions.remove : [];
-  
+
   permData.all_permissions.forEach(function(p) {
     var cb = document.getElementById('perm-' + p);
     if (!cb) return;
@@ -852,22 +920,22 @@ async function editUser(id) {
     cb.checked = (isRoleDefault && !isCustomRemoved) || isCustomAdded;
     cb.dataset.isRoleDefault = isRoleDefault ? '1' : '0';
   });
-  
+
   var proxyFiltersGroup = document.getElementById('proxy-filters-group');
   proxyFiltersGroup.style.display = user.role === 'user' ? 'block' : 'none';
-  
+
   var userFilters = user.custom_permissions && user.custom_permissions.proxy_filters ? user.custom_permissions.proxy_filters : {};
   var allowedStatuses = userFilters.statuses || [];
   var allowedProtocols = userFilters.protocols || [];
-  
+
   document.querySelectorAll('.proxy-filter-status').forEach(function(cb) {
     cb.checked = allowedStatuses.length === 0 || allowedStatuses.includes(cb.value);
   });
-  
+
   document.querySelectorAll('.proxy-filter-proto').forEach(function(cb) {
     cb.checked = allowedProtocols.length === 0 || allowedProtocols.includes(cb.value);
   });
-  
+
   updateRolePermissions();
   document.getElementById('modal-user-form').classList.add('active');
 }
@@ -876,7 +944,7 @@ async function loadPermissions() {
   var res = await authFetch('/api/users/permissions');
   if (!res.ok) { showAlert('Session expired. Please login again.'); window.location.href = '/login'; return null; }
   var data = await res.json();
-  
+
   var permCategories = {
     'Proxies': ['proxies.view', 'proxies.add', 'proxies.edit', 'proxies.delete', 'proxies.test', 'proxies.export', 'proxies.columns', 'proxies.search', 'proxies.refresh'],
     'Import': ['proxies.import'],
@@ -886,7 +954,7 @@ async function loadPermissions() {
     'Settings': ['settings.view', 'settings.edit'],
     'Users': ['users.manage']
   };
-  
+
   var html = '';
   for (var category in permCategories) {
     var perms = permCategories[category];
@@ -920,13 +988,13 @@ function updateRolePermissions() {
   var customGroup = document.getElementById('custom-perms-group');
   var proxyFiltersGroup = document.getElementById('proxy-filters-group');
   customGroup.style.display = role === 'user' ? 'block' : 'none';
-  
+
   proxyFiltersGroup.style.display = role === 'user' ? 'block' : 'none';
-  
+
   document.getElementById('role-desc-user').style.display = role === 'user' ? 'block' : 'none';
   document.getElementById('role-desc-superadmin').style.display = role === 'superadmin' ? 'block' : 'none';
   document.getElementById('role-desc-admin').style.display = role === 'admin' ? 'block' : 'none';
-  
+
   document.querySelectorAll('#custom-perms-list label').forEach(function(label) {
     var cb = label.querySelector('input');
     if (!cb) return;
@@ -946,13 +1014,13 @@ async function saveUser() {
   var password = document.getElementById('user-password').value;
   var role = document.getElementById('user-role').value;
   var is_active = document.getElementById('user-active').checked;
-  
+
   var permRes = await authFetch('/api/users/permissions');
   if (!permRes.ok) { showAlert('Session expired. Please login again.'); window.location.href = '/login'; return; }
   var permData = await permRes.json();
   var rolePerms = permData.role_permissions[role] || [];
   var isRoleWildcard = rolePerms.includes('*');
-  
+
   var addPerms = [];
   var removePerms = [];
   document.querySelectorAll('#custom-perms-list input').forEach(function(cb) {
@@ -963,25 +1031,25 @@ async function saveUser() {
       removePerms.push(cb.value);
     }
   });
-  
+
   var data = {
     username: username,
     role: role,
     is_active: is_active,
     custom_permissions: { add: addPerms, remove: removePerms }
   };
-  
+
   if (role === 'user') {
     var selectedStatuses = [];
     document.querySelectorAll('.proxy-filter-status:checked').forEach(function(cb) {
       selectedStatuses.push(cb.value);
     });
-    
+
     var selectedProtocols = [];
     document.querySelectorAll('.proxy-filter-proto:checked').forEach(function(cb) {
       selectedProtocols.push(cb.value);
     });
-    
+
     if (selectedStatuses.length > 0 || selectedProtocols.length > 0) {
       data.custom_permissions.proxy_filters = {
         statuses: selectedStatuses,
@@ -989,18 +1057,18 @@ async function saveUser() {
       };
     }
   }
-  
+
   if (password) data.password = password;
-  
+
   var method = id ? 'PUT' : 'POST';
   var url = id ? '/api/users/' + id : '/api/users';
-  
+
   var res = await authFetch(url, {
     method: method,
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(data)
   });
-  
+
   var result = await res.json();
   if (result.success) {
     closeModal('modal-user-form');
@@ -1068,7 +1136,7 @@ function capabilityMark(v) {
 
 async function loadProxies() {
   await loadStats();
-  
+
   var protoEl = document.querySelector('#tab-proxies select');
   var proto = protoEl ? protoEl.value : 'all';
   var statusFilter = getStatusFilterParam();
@@ -1109,7 +1177,7 @@ async function loadProxies() {
   (data.proxies || []).forEach(function(p) {
     var statusClass = 'status-untested';
     var statusLabel = 'Untested';
-    
+
     var status = p.status || 'untested';
     if (status === 'alive') {
       statusClass = 'status-alive';
@@ -1365,23 +1433,23 @@ async function exportProxies(fmt) {
       visibleCols.push(th.dataset.col);
     }
   });
-  
+
   var protoEl = document.querySelector('input[name="filter-proto"]:checked');
   var proto = protoEl ? protoEl.value : 'all';
   var statusEl = document.querySelector('input[name="filter-status"]:checked');
   var status = statusEl ? statusEl.value : 'all';
-  
+
   var params = new URLSearchParams({
     format: fmt,
     columns: visibleCols.join(','),
     proto: proto,
     status: status
   });
-  
+
   if (searchRules.length > 0) {
     params.append('adv_search', JSON.stringify(searchRules));
   }
-  
+
   window.location.href = '/api/export?' + params.toString();
 }
 
@@ -1466,7 +1534,7 @@ function clearImportCount(type) {
 function handleLinksFileUpload() {
   var file = document.getElementById('import-links-file').files[0];
   if (!file) return;
-  
+
   var reader = new FileReader();
   reader.onload = function(e) {
     document.getElementById('import-links-content').value = e.target.result;
@@ -1478,7 +1546,7 @@ function handleLinksFileUpload() {
 function handleManualFileUpload() {
   var file = document.getElementById('import-manual-file').files[0];
   if (!file) return;
-  
+
   var reader = new FileReader();
   reader.onload = function(e) {
     document.getElementById('import-manual-content').value = e.target.result;
@@ -1501,7 +1569,7 @@ async function countImportUrl() {
       body: JSON.stringify({url: url, protocol: proto})
     });
     var data = await res.json();
-    
+
     if (data.success) {
       document.getElementById('import-url-count').textContent = 'Found ' + data.count + ' proxies';
     } else {
@@ -1522,11 +1590,11 @@ function countImportLinks() {
   var counts = {http: 0, https: 0, socks4: 0, socks5: 0};
   var lines = content.split('\n');
   var currentSection = 'http';
-  
+
   for (var i = 0; i < lines.length; i++) {
     var trimmed = lines[i].trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
-    
+
     if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
       currentSection = trimmed.slice(1, -1).toLowerCase();
       if (!counts[currentSection]) currentSection = 'http';
@@ -1555,11 +1623,11 @@ function countImportManual() {
 
   var counts = {http: 0, https: 0, socks4: 0, socks5: 0};
   var lines = content.split('\n');
-  
+
   for (var i = 0; i < lines.length; i++) {
     var trimmed = lines[i].trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
-    
+
     var parts = trimmed.split(/\s+/);
     if (parts.length >= 2) {
       var proto = parts[0].toLowerCase();
@@ -1588,16 +1656,16 @@ function formatMonitorTime(isoString) {
   var diffMins = Math.floor(diffMs / 60000);
   var diffHours = Math.floor(diffMs / 3600000);
   var diffDays = Math.floor(diffMs / 86400000);
-  
+
   var timeStr = d.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
   var dateStr = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
-  
+
   var relativeStr;
   if (diffMins < 1) relativeStr = 'just now';
   else if (diffMins < 60) relativeStr = diffMins + 'm ago';
   else if (diffHours < 24) relativeStr = diffHours + 'h ago';
   else relativeStr = diffDays + 'd ago';
-  
+
   return timeStr + ' (' + relativeStr + ')';
 }
 
@@ -1636,30 +1704,30 @@ function updateMonitorOverview(monitors) {
 async function checkMonitorStatus() {
   var res = await authFetch('/api/monitor');
   var data = await res.json();
-  
+
   var grid = document.getElementById('monitors-grid');
   var monitors = data.monitors || {};
   var monitorIds = Object.keys(monitors);
   updateMonitorOverview(monitors);
-  
+
   if (monitorIds.length === 0) {
     grid.innerHTML = '<div class="monitors-empty monitor-empty-state"><strong>No validation profiles yet.</strong><span>Create a monitor profile to test protocol reachability, HTTPS, remote DNS, Telegram, and geo data.</span><button class="btn btn-primary btn-sm" onclick="showAddMonitorForm()">Create monitor profile</button></div>';
     return;
   }
-  
+
   grid.innerHTML = '';
   monitorIds.forEach(function(mid) {
     var m = monitors[mid];
     var wasRunning = previousMonitorState[mid] && previousMonitorState[mid].running;
     var isRunning = m.running;
-    
+
     if (wasRunning && !isRunning) {
       loadProxies();
       loadStats();
     }
-    
+
     previousMonitorState[mid] = { running: isRunning };
-    
+
     var config = m.config || {};
     var profileName = escapeHtml(m.name || config.name || mid.replace('monitor_', ''));
     var protocol = escapeHtml((config.protocol || 'all').toUpperCase());
@@ -1678,7 +1746,7 @@ async function checkMonitorStatus() {
     var proxyCount = escapeHtml(m.proxy_count || 0);
     var startTime = m.start_time;
     var endTime = m.end_time;
-    
+
     var runModeDisplay = String(runMode);
     if (runMode === 'schedule' && scheduleTime) {
       runModeDisplay = 'schedule @ ' + scheduleTime;
@@ -1687,15 +1755,15 @@ async function checkMonitorStatus() {
     } else if (runMode === 'infinite' || runMode === 'restart') {
       runModeDisplay = runMode + ' (' + interval + 's)';
     }
-    
+
     runModeDisplay = escapeHtml(runModeDisplay);
     var card = document.createElement('div');
     card.className = 'monitor-card monitor-profile-card';
-    
+
     var progress = m.progress || {};
     var runtimeState = String(progress.state || m.session_status || m.last_state || 'idle');
     var isPaused = !isRunning && (progress.paused === true || runtimeState === 'paused');
-    
+
     var statusClass, statusText, statusDotClass;
     if (m.starting) {
       statusClass = 'running';
@@ -1723,12 +1791,12 @@ async function checkMonitorStatus() {
       statusText = runtimeState === 'stopped' ? 'Stopped' : 'Idle';
       statusDotClass = 'status-dead';
     }
-    
+
     var serviceBadge = serviceName ? ' <span style="background:var(--accent);color:white;padding:2px 6px;border-radius:4px;font-size:10px">SERVICE</span>' : '';
-    
+
     var progressHtml = '';
     var progress = m.progress || {};
-    
+
     if ((isRunning || isPaused) && progress && !progress.completed) {
       var p = progress;
       var tested = p.tested || 0;
@@ -1737,14 +1805,14 @@ async function checkMonitorStatus() {
       var aliveC = p.alive || 0;
       var deadC = p.dead || 0;
       var otherC = p.other || 0;
-      
+
       var aliveWidth = total > 0 ? (aliveC / total * 100) : 0;
       var deadWidth = total > 0 ? (deadC / total * 100) : 0;
       var otherWidth = total > 0 ? (otherC / total * 100) : 0;
-      
+
       var pausedLabel = isPaused ? ' <span style="background:#f59e0b;color:white;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:4px">PAUSED</span>' : '';
-      
-      progressHtml = 
+
+      progressHtml =
         '<div class="monitor-progress">' +
           '<div class="monitor-progress-bar-wrap">' +
             '<div class="monitor-progress-bar" style="width:' + aliveWidth + '%;background:var(--success)"></div>' +
@@ -1763,7 +1831,7 @@ async function checkMonitorStatus() {
         '</div>';
     } else if (!isRunning && progress && progress.completed) {
       var p = progress;
-      progressHtml = 
+      progressHtml =
         '<div class="monitor-final-stats">' +
           '<div class="monitor-final-stats-row">' +
             '<span class="stat-alive">✓ ' + (p.alive || 0) + ' alive</span>' +
@@ -1777,8 +1845,8 @@ async function checkMonitorStatus() {
           '</div>' +
         '</div>';
     }
-    
-    card.innerHTML = 
+
+    card.innerHTML =
       '<div class="monitor-card-header">' +
         '<div class="monitor-card-title">' +
           '<span class="status-dot ' + statusDotClass + '"></span>' +
@@ -1804,7 +1872,7 @@ async function checkMonitorStatus() {
         (serviceName && !isRunning ? '<button class="btn btn-sm" onclick="removeMonitorService(\'' + mid + '\')">Remove Service</button>' : '') +
         (isRunning || isPaused ? '<button class="btn btn-sm btn-danger" onclick="stopMonitor(\'' + mid + '\')">Stop</button>' : '<button class="btn btn-sm btn-danger" onclick="deleteMonitor(\'' + mid + '\', ' + (serviceName ? 'true' : 'false') + ')">Delete</button>') +
       '</div>';
-    
+
     grid.appendChild(card);
   });
 }
@@ -1865,15 +1933,15 @@ async function showMonitorSettings(monitorId) {
   var data = await res.json();
   var monitors = data.monitors || {};
   var monitor = monitors[monitorId];
-  
+
   if (!monitor || !monitor.config) {
     showAlert('No configuration found for this monitor');
     return;
   }
-  
+
   var cfg = monitor.config;
   currentEditMonitorId = monitorId;
-  
+
   document.getElementById('monitor-name').value = monitor.name || cfg.name || '';
   document.getElementById('monitor-protocol').value = cfg.protocol || '';
   document.getElementById('monitor-check-urls').value = cfg.check_urls || '';
@@ -1887,7 +1955,7 @@ async function showMonitorSettings(monitorId) {
   document.getElementById('monitor-custom-every').value = cfg.custom_every || 24;
   document.getElementById('monitor-geo').value = cfg.geo || 'true';
   document.getElementById('monitor-create-service').value = cfg.create_service || 'no';
-  
+
   var savedStatuses = (cfg.status || '').split(',').filter(function(s) { return s; });
   if (savedStatuses.length > 0) {
     monitorStatusEnabled = {alive: false, soft: false, flaky: false, cooling: false, dead: false, revived: false, 'semi-revived': false, untested: false};
@@ -1899,7 +1967,7 @@ async function showMonitorSettings(monitorId) {
   } else {
     monitorStatusEnabled = {alive: true, soft: true, flaky: true, cooling: true, dead: true, revived: true, 'semi-revived': true, untested: true};
   }
-  
+
   ['alive', 'soft', 'flaky', 'cooling', 'dead', 'revived', 'semi-revived', 'untested'].forEach(function(s) {
     var el = document.getElementById('monitor-status-' + s);
     if (el) {
@@ -1912,7 +1980,7 @@ async function showMonitorSettings(monitorId) {
       }
     }
   });
-  
+
   toggleRunModeOptions();
   document.getElementById('modal-add-monitor').classList.add('active');
   document.querySelector('#modal-add-monitor .modal-title').textContent = 'Edit Monitor';
@@ -1932,7 +2000,7 @@ function showAddMonitorForm() {
   document.getElementById('monitor-custom-every').value = 24;
   document.getElementById('monitor-geo').value = 'true';
   document.getElementById('monitor-create-service').value = 'no';
-  
+
   monitorStatusEnabled = {alive: true, soft: true, flaky: true, cooling: true, dead: true, revived: true, 'semi-revived': true, untested: true};
   ['alive', 'soft', 'flaky', 'cooling', 'dead', 'revived', 'semi-revived', 'untested'].forEach(function(s) {
     var el = document.getElementById('monitor-status-' + s);
@@ -1941,7 +2009,7 @@ function showAddMonitorForm() {
       el.style.filter = 'none';
     }
   });
-  
+
   toggleRunModeOptions();
   currentEditMonitorId = null;
   document.querySelector('#modal-add-monitor .modal-title').textContent = 'Add New Monitor Profile';
@@ -1958,12 +2026,12 @@ async function updateMonitorProfile() {
     showAlert('No monitor selected for editing');
     return;
   }
-  
+
   var btn = event.target;
   if (btn.disabled) return;
   btn.disabled = true;
   btn.textContent = 'Updating...';
-  
+
   var name = (document.getElementById('monitor-name').value || '').trim();
   if (!name) {
     showAlert('Profile name is required');
@@ -1971,21 +2039,21 @@ async function updateMonitorProfile() {
     btn.textContent = 'Update';
     return;
   }
-  
+
   var statusValues = [];
   ['alive', 'soft', 'flaky', 'cooling', 'dead', 'revived', 'semi-revived', 'untested'].forEach(function(s) {
     if (monitorStatusEnabled[s]) {
       statusValues.push(s);
     }
   });
-  
+
   if (statusValues.length === 0) {
     showAlert('Please select at least one status');
     btn.disabled = false;
     btn.textContent = 'Update';
     return;
   }
-  
+
   var data = {
     monitor_id: currentEditMonitorId,
     name: name,
@@ -2003,7 +2071,7 @@ async function updateMonitorProfile() {
     geo: document.getElementById('monitor-geo').value,
     create_service: document.getElementById('monitor-create-service').value
   };
-  
+
   try {
     var res = await authFetch('/api/monitor/update', {
       method: 'POST',
@@ -2011,7 +2079,7 @@ async function updateMonitorProfile() {
       body: JSON.stringify(data)
     });
     var result = await res.json();
-    
+
     if (result.success) {
       closeModal('modal-add-monitor');
       checkMonitorStatus();
@@ -2032,7 +2100,7 @@ async function createMonitorProfile() {
   if (btn.disabled) return;
   btn.disabled = true;
   btn.textContent = 'Creating...';
-  
+
   var name = (document.getElementById('monitor-name').value || '').trim();
   if (!name) {
     showAlert('Profile name is required');
@@ -2040,21 +2108,21 @@ async function createMonitorProfile() {
     btn.textContent = 'Create';
     return;
   }
-  
+
   var statusValues = [];
   ['alive', 'soft', 'flaky', 'cooling', 'dead', 'revived', 'semi-revived', 'untested'].forEach(function(s) {
     if (monitorStatusEnabled[s]) {
       statusValues.push(s);
     }
   });
-  
+
   if (statusValues.length === 0) {
     showAlert('Please select at least one status');
     btn.disabled = false;
     btn.textContent = 'Create';
     return;
   }
-  
+
   var data = {
     name: name,
     protocol: document.getElementById('monitor-protocol').value,
@@ -2071,7 +2139,7 @@ async function createMonitorProfile() {
     geo: document.getElementById('monitor-geo').value,
     create_service: document.getElementById('monitor-create-service').value
   };
-  
+
   try {
     var res = await authFetch('/api/monitor/create', {
       method: 'POST',
@@ -2079,7 +2147,7 @@ async function createMonitorProfile() {
       body: JSON.stringify(data)
     });
     var result = await res.json();
-    
+
     if (result.success) {
       closeModal('modal-add-monitor');
       checkMonitorStatus();
@@ -2194,29 +2262,29 @@ async function checkServerStatus() {
     var res = await authFetch('/api/server');
     var data = await res.json();
     console.log('Server status:', data);
-    
+
     var grid = document.getElementById('servers-list');
     var servers = data.servers || {};
     var ports = Object.keys(servers);
-    
+
     if (ports.length === 0) {
       grid.innerHTML = '<div class="servers-empty serving-empty-state"><strong>No server profiles yet.</strong><span>Create a profile from a preset, run preflight, then start serving when candidates are available.</span><button class="btn btn-primary btn-sm" onclick="showAddServerForm()">Create server profile</button></div>';
       return;
     }
-    
+
     grid.innerHTML = '';
     ports.forEach(function(port) {
       var s = servers[port];
       var cfg = s.config || {};
-      
+
       var card = document.createElement('div');
       card.className = 'server-card serving-profile-card';
-      
+
       var statusClass = s.running ? 'running' : 'stopped';
       var statusText = s.running ? 'Running' : 'Stopped';
       var statusDotClass = s.running ? 'status-alive' : 'status-dead';
-      
-      card.innerHTML = 
+
+      card.innerHTML =
         '<div class="server-card-header">' +
           '<div class="server-card-title">' +
             '<span class="status-dot ' + statusDotClass + '"></span>' +
@@ -2241,7 +2309,7 @@ async function checkServerStatus() {
           '<button class="btn btn-sm" onclick="showServerSettings(\'' + port + '\')">Settings</button>' +
           (s.running ? '' : '<button class="btn btn-sm btn-danger" onclick="deleteServer(\'' + port + '\')">Delete</button>') +
         '</div>';
-      
+
       grid.appendChild(card);
     });
   } catch(e) {
@@ -2258,9 +2326,9 @@ async function startServerFromModal() {
     var el = document.getElementById(id);
     return el && el.value ? el.value : (def || '');
   }
-  
+
   var port = parseInt(getVal('server-port', '8080'));
-  
+
   var data = {
     protocol: getVal('server-proto'),
     bind: getVal('server-bind', '127.0.0.1'),
@@ -2308,7 +2376,7 @@ async function startServerFromModal() {
       showAlert('Error: ' + result.error);
       return;
     }
-    
+
     res = await authFetch('/api/server/start', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -2337,16 +2405,16 @@ async function showServerSettings(port) {
   var data = await res.json();
   var servers = data.servers || {};
   var server = servers[port];
-  
+
   if (!server || !server.config) {
     showAlert('No configuration found for this server');
     return;
   }
-  
+
   var cfg = server.config;
   currentEditPort = port;
   isEditingServer = true;
-  
+
   document.getElementById('server-proto').value = cfg.protocol || 'http';
   document.getElementById('server-bind').value = cfg.bind || '127.0.0.1';
   document.getElementById('server-port').value = cfg.port || port;
@@ -2380,7 +2448,7 @@ async function showServerSettings(port) {
   document.getElementById('server-mobile').value = cfg.mobile || '';
   document.getElementById('server-proxy').value = cfg.proxy || '';
   document.getElementById('server-hosting').value = cfg.hosting || '';
-  
+
   document.querySelector('#modal-add-server .modal-title').textContent = 'Edit Server Profile';
   var createBtn = document.getElementById('server-wizard-submit');
   if (createBtn) {
@@ -2394,7 +2462,7 @@ async function showServerSettings(port) {
 function showAddServerForm() {
   isEditingServer = false;
   currentEditPort = null;
-  
+
   document.getElementById('server-proto').value = 'http';
   document.getElementById('server-bind').value = '127.0.0.1';
   document.getElementById('server-port').value = '8080';
@@ -2428,7 +2496,7 @@ function showAddServerForm() {
   document.getElementById('server-mobile').value = '';
   document.getElementById('server-proxy').value = '';
   document.getElementById('server-hosting').value = '';
-  
+
   document.querySelector('#modal-add-server .modal-title').textContent = 'Add New Server Profile';
   var createBtn = document.getElementById('server-wizard-submit');
   if (createBtn) {
@@ -2448,12 +2516,12 @@ async function updateServerProfile() {
     showAlert('No server selected for editing');
     return;
   }
-  
+
   function getVal(id, def) {
     var el = document.getElementById(id);
     return el && el.value ? el.value : (def || '');
   }
-  
+
   var port = currentEditPort;
   var data = {
     protocol: getVal('server-proto'),
@@ -2532,7 +2600,7 @@ async function startServer(port) {
       var el = document.getElementById(id);
       return el && el.value ? el.value : (def || '');
     }
-    
+
     var data = {
     protocol: getVal('server-proto'),
     bind: getVal('server-bind', '127.0.0.1'),
@@ -2588,7 +2656,7 @@ async function startServer(port) {
     }
     return;
   }
-  
+
   var res = await authFetch('/api/server/start', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -2707,7 +2775,7 @@ async function loadStats() {
 
     var protoEl = document.querySelector('#tab-proxies select');
     var currentProto = protoEl ? protoEl.value : 'all';
-    
+
     var statsData = data;
     if (currentProto !== 'all' && data.protocol_stats && data.protocol_stats[currentProto]) {
       statsData = data.protocol_stats[currentProto];
@@ -2723,7 +2791,7 @@ async function loadStats() {
     document.getElementById('stat-semi-revived').textContent = statsData['semi-revived'] || 0;
     document.getElementById('stat-untested').textContent = statsData.untested || 0;
     document.getElementById('stat-speed').textContent = data.avg_speed + 'ms';
-    
+
     document.getElementById('filter-count-alive').textContent = statsData.alive || 0;
     document.getElementById('filter-count-soft').textContent = statsData.soft || 0;
     document.getElementById('filter-count-flaky').textContent = statsData.flaky || 0;
@@ -2742,10 +2810,10 @@ async function loadStats() {
     setTxt('stat-full-capability', data.full_capability);
     updateInventoryOverview(data, statsData);
     updateStatsInsights(data, statsData);
-    
+
     var lastScanInfo = document.getElementById('last-scan-info');
     var lastScanTime = null;
-    
+
     if (currentProto !== 'all' && data.protocol_stats && data.protocol_stats[currentProto] && data.protocol_stats[currentProto].last_check) {
       lastScanTime = data.protocol_stats[currentProto].last_check;
     } else if (currentProto === 'all') {
@@ -2760,16 +2828,16 @@ async function loadStats() {
       });
       lastScanTime = newestTime;
     }
-    
+
     if (lastScanTime) {
       var lastCheck = new Date(lastScanTime);
       var now = new Date();
       var diffMs = now - lastCheck;
       var diffMins = Math.floor(diffMs / 60000);
-      
+
       var dotColor = '#ef4444';
       var timeDisplay = '';
-      
+
       if (diffMins < 5) {
         dotColor = '#22c55e';
         timeDisplay = 'now';
@@ -2780,7 +2848,7 @@ async function loadStats() {
       } else {
         timeDisplay = Math.floor(diffMins / 1440) + ' days ago';
       }
-      
+
       var fullTime = lastCheck.toLocaleString();
       lastScanInfo.innerHTML = '<span style="display:inline-flex;align-items:center;gap:4px;font-size:12px"><span style="width:6px;height:6px;border-radius:50%;background:' + dotColor + ';display:inline-block"></span><span>' + timeDisplay + '</span><span style="color:var(--muted)">(' + fullTime + ')</span></span>';
     } else {
@@ -2948,26 +3016,26 @@ async function importDB() {
   var fileInput = document.getElementById('import-file');
   var mode = document.getElementById('import-mode').value;
   var btn = document.getElementById('import-btn');
-  
+
   if (!fileInput.files[0]) {
     showAlert('Please select a file');
     return;
   }
-  
+
   btn.disabled = true;
   btn.textContent = 'Importing...';
-  
+
   var formData = new FormData();
   formData.append('file', fileInput.files[0]);
   formData.append('mode', mode);
-  
+
   try {
     var res = await authFetch('/api/settings/import', {
       method: 'POST',
       body: formData
     });
     var data = await res.json();
-    
+
     if (data.success) {
       showAlert('Import successful!');
       document.getElementById('import-modal').style.display = 'none';
@@ -3044,11 +3112,11 @@ async function clearAllProxies() {
 async function bulkDeleteProxies() {
   var protocol = document.getElementById('delete-protocol').value;
   var status = document.getElementById('delete-status').value;
-  
+
   var confirmMsg = 'Delete all ' + (protocol === 'all' ? '' : protocol.toUpperCase()) + ' proxies';
   if (status !== 'all') confirmMsg += ' with status "' + status + '"';
   confirmMsg += '? This cannot be undone.';
-  
+
   showConfirm('Delete Proxies', confirmMsg, async function() {
     var res = await authFetch('/api/proxies/delete', {
       method: 'POST',
@@ -3102,22 +3170,22 @@ async function cleanupLegacyStatuses() {
 async function updateProxyFilterInfo() {
   var proto = document.querySelector('input[name="filter-proto"]:checked') ? document.querySelector('input[name="filter-proto"]:checked').value : 'all';
   var info = document.getElementById('proxy-filter-info');
-  
+
   if (!cachedStats || proto === 'all') {
     info.innerHTML = '';
     return;
   }
-  
+
   var stats = cachedStats.protocol_stats && cachedStats.protocol_stats[proto];
   if (!stats) {
     info.innerHTML = '';
     return;
   }
-  
+
   var lastCheck = formatTimeAgo(stats.last_check);
   var total = (stats.alive || 0) + (stats.dead || 0) + (stats.flaky || 0) + (stats.cooling || 0) + (stats.untested || 0);
-  
-  info.innerHTML = 
+
+  info.innerHTML =
     '<span style="background:var(--panel-light);padding:3px 10px;border-radius:12px;font-size:11px;margin-left:8px">' +
       '<span style="color:var(--muted)">Last:</span> <span style="color:var(--text)">' + lastCheck + '</span>' +
     '</span>' +

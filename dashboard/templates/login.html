@@ -1,24 +1,67 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
-<meta charset="utf-8">
-<title>Login - Proxy Dashboard</title>
-<link rel="stylesheet" href="/static/css/login.css">
-<script src="/static/js/login.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>Sign in · ProxyPool</title>
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('theme');
+        var preferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', saved || preferred);
+      } catch (_error) {}
+    }());
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
 </head>
 <body>
-<div class="form-container">
-  <h2>Proxy Dashboard</h2>
-  {% with messages = get_flashed_messages(category_filter=["error"]) %}
-  {% if messages %}<div class="error">{{ messages[0] }}</div>{% else %}<div class="error" style="display:none"></div>{% endif %}
-  {% endwith %}
-  <form onsubmit="doLogin(event)">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="text" name="username" placeholder="Username" required autocomplete="username">
-    <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
-    <button type="submit">Sign in</button>
-  </form>
-  {% if not auth_configured %}<p class="setup-note">No environment-backed admin password is configured. Sign in with a database user or create one with <code>scripts/create_admin.py</code>.</p>{% endif %}
-</div>
+  <main class="login-shell">
+    <section class="login-visual" aria-label="ProxyPool overview">
+      <div class="login-brand"><div class="login-mark"><span></span><span></span><span></span></div><strong>ProxyPool</strong></div>
+      <div class="login-message">
+        <span>Control plane</span>
+        <h1>Qualify every route before it carries traffic.</h1>
+        <p>Import, validate, review, and serve proxy pools from one operational workspace.</p>
+      </div>
+      <div class="login-flow" aria-hidden="true">
+        <div><span>01</span><strong>Source</strong></div><i></i>
+        <div><span>02</span><strong>Validate</strong></div><i></i>
+        <div><span>03</span><strong>Serve</strong></div>
+      </div>
+    </section>
+
+    <section class="login-panel">
+      <div class="login-form-wrap">
+        <div class="login-heading">
+          <span>Secure access</span>
+          <h2>Welcome back</h2>
+          <p>Sign in to manage the local ProxyPool control plane.</p>
+        </div>
+
+        {% with messages = get_flashed_messages(category_filter=["error"]) %}
+          {% if messages %}<div class="error" role="alert">{{ messages[0] }}</div>{% else %}<div class="error" role="alert" hidden></div>{% endif %}
+        {% endwith %}
+
+        <form onsubmit="doLogin(event)" novalidate>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label for="login-username">Username</label>
+          <input id="login-username" type="text" name="username" placeholder="admin" required autocomplete="username" autofocus>
+          <label for="login-password">Password</label>
+          <input id="login-password" type="password" name="password" placeholder="Enter your password" required autocomplete="current-password">
+          <button type="submit"><span>Sign in</span><span aria-hidden="true">→</span></button>
+        </form>
+
+        {% if not auth_configured %}
+          <p class="setup-note">No environment-backed account is configured. Use a database user or create one with <code>python3 scripts/create_admin.py</code>.</p>
+        {% endif %}
+        <p class="login-footnote">Local control plane · credentials stay on this host</p>
+      </div>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='js/login.js') }}"></script>
 </body>
 </html>

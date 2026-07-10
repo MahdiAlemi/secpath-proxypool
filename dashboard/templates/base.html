@@ -1,14 +1,32 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="csrf-token" content="{{ csrf_token() }}">
-<title>Proxy Dashboard</title>
-<link rel="stylesheet" href="/static/css/base.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#101820">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{% block title %}ProxyPool Control Plane{% endblock %}</title>
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('theme');
+        var preferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', saved || preferred);
+      } catch (_error) {}
+    }());
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/compat.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/pages.css') }}">
+  {% block head %}{% endblock %}
 </head>
 <body>
-{% block content %}{% endblock %}
-<script src="/static/js/base.js"></script>
+  {% block content %}{% endblock %}
+  <script src="{{ url_for('static', filename='js/base.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/shell.js') }}"></script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

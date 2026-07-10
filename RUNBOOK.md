@@ -275,3 +275,17 @@ curl -v --proxy socks5h://127.0.0.1:1080 https://example.com/
 ```
 
 These commands generate traffic and may update upstream health counters unless the server profile is configured as read-only. They are local operator checks, not deployment steps.
+
+## UI foundation verification
+
+After applying the UI overlay, verify template composition and browser assets with:
+
+```bash
+bash scripts/health_check.sh
+python3 -m unittest -v tests.test_ui_foundation
+node --check dashboard/static/js/base.js
+node --check dashboard/static/js/shell.js
+node --check dashboard/static/js/login.js
+```
+
+This phase does not require a database migration, service restart, or deployment.

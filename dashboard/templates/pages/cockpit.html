@@ -1,0 +1,82 @@
+<div id="tab-cockpit" class="tab-content {{ 'hidden' if tab!='cockpit' else '' }}">
+  <section class="page-intro cockpit-intro" aria-labelledby="cockpit-title">
+    <div class="page-intro-copy">
+      <span class="page-kicker">Operations overview</span>
+      <h1 id="cockpit-title">Know what is ready before you route traffic.</h1>
+      <p>One focused view of pool health, validation coverage, active runtimes, and the next action that moves the system forward.</p>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="showTab('import', event)">
+          <span aria-hidden="true">＋</span> Import proxies
+        </button>
+        <button class="btn btn-secondary" onclick="showAddMonitorForm()">Run validation</button>
+      </div>
+    </div>
+    <div class="readiness-orb" id="cockpit-readiness-orb" aria-live="polite">
+      <div class="readiness-orb-ring">
+        <strong id="cockpit-readiness-score">—</strong>
+        <span>ready</span>
+      </div>
+      <p id="cockpit-readiness-caption">Calculating pool readiness…</p>
+    </div>
+  </section>
+
+  <section class="metric-strip" id="cockpit-health" aria-label="System health metrics">
+    <div class="metric-skeleton"></div><div class="metric-skeleton"></div><div class="metric-skeleton"></div><div class="metric-skeleton"></div>
+  </section>
+
+  <div class="dashboard-layout">
+    <div class="dashboard-main-column">
+      <section class="surface">
+        <div class="surface-header">
+          <div>
+            <span class="surface-kicker">Capability coverage</span>
+            <h2>Traffic readiness</h2>
+          </div>
+          <button class="text-button" onclick="showTab('stats', event)">Open insights <span aria-hidden="true">→</span></button>
+        </div>
+        <div id="cockpit-readiness" class="readiness-list" aria-live="polite"></div>
+      </section>
+
+      <section class="surface workflow-surface">
+        <div class="surface-header">
+          <div>
+            <span class="surface-kicker">Workflow</span>
+            <h2>From source to serving</h2>
+          </div>
+        </div>
+        <div class="workflow-track">
+          <button class="workflow-step" onclick="showTab('import', event)"><span>01</span><strong>Import</strong><small>Bring in fresh candidates</small></button>
+          <div class="workflow-connector" aria-hidden="true"></div>
+          <button class="workflow-step" onclick="showTab('monitor', event)"><span>02</span><strong>Validate</strong><small>Verify real capabilities</small></button>
+          <div class="workflow-connector" aria-hidden="true"></div>
+          <button class="workflow-step" onclick="showTab('proxies', event)"><span>03</span><strong>Review</strong><small>Inspect quality signals</small></button>
+          <div class="workflow-connector" aria-hidden="true"></div>
+          <button class="workflow-step" onclick="showTab('server', event)"><span>04</span><strong>Serve</strong><small>Route qualified traffic</small></button>
+        </div>
+      </section>
+    </div>
+
+    <aside class="dashboard-side-column" aria-label="Operations summary">
+      <section class="surface action-surface">
+        <div class="surface-header compact">
+          <div>
+            <span class="surface-kicker">Priority queue</span>
+            <h2>Next actions</h2>
+          </div>
+        </div>
+        <div id="cockpit-next-actions" class="action-list" aria-live="polite"></div>
+      </section>
+
+      <section class="surface runtime-surface">
+        <div class="surface-header compact">
+          <div>
+            <span class="surface-kicker">Live system</span>
+            <h2>Runtime status</h2>
+          </div>
+          <button class="icon-button small" onclick="loadCockpit()" title="Refresh overview" aria-label="Refresh overview">↻</button>
+        </div>
+        <div id="cockpit-runtime" class="runtime-list" aria-live="polite"></div>
+      </section>
+    </aside>
+  </div>
+</div>

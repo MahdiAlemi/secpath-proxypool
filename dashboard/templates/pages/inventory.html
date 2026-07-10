@@ -1,0 +1,178 @@
+<!-- PROXIES TAB -->
+    <div id="tab-proxies" class="tab-content {{ 'hidden' if tab!='proxies' else '' }}">
+      <div class="card">
+        <div class="card-header inventory-card-header">
+          <div class="inventory-toolbar-title">
+            <div class="card-title">Proxy Inventory</div>
+            <div class="section-hint">Review quality, capability, and routing readiness before serving traffic.</div>
+          </div>
+          <div class="inventory-filter-row" style="display:flex;align-items:center;gap:10px;flex:1">
+            <div style="display:flex;gap:4px;align-items:center">
+              <span style="font-size:12px;color:var(--muted)">Proto:</span>
+              <select onchange="changeProtoFilter()" style="padding:4px 6px;border-radius:4px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:12px">
+                <option value="all">All</option>
+                <option value="http">HTTP</option>
+                <option value="https">HTTPS</option>
+                <option value="socks4">SOCKS4</option>
+                <option value="socks5">SOCKS5</option>
+              </select>
+            </div>
+            <div id="status-filters" style="display:flex;gap:4px;align-items:center">
+              <span style="font-size:12px;color:var(--muted)">Status:</span>
+              <div class="stat-card hidden-by-filter" data-status="alive" onclick="toggleStatusFilter('alive')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Alive">
+                <div id="filter-count-alive" style="font-weight:bold;font-size:12px;color:var(--success)">0</div>
+              </div>
+              <div class="stat-card hidden-by-filter" data-status="flaky" onclick="toggleStatusFilter('flaky')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Flaky">
+                <div id="filter-count-flaky" style="font-weight:bold;font-size:12px;color:#f59e0b">0</div>
+              </div>
+              <div class="stat-card hidden-by-filter" data-status="cooling" onclick="toggleStatusFilter('cooling')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Cooling">
+                <div id="filter-count-cooling" style="font-weight:bold;font-size:12px;color:#8b5cf6">0</div>
+              </div>
+              <div class="stat-card hidden-by-filter" data-status="soft" onclick="toggleStatusFilter('soft')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Soft">
+                <div id="filter-count-soft" style="font-weight:bold;font-size:12px;color:#FF9800">0</div>
+              </div>
+              <div class="stat-card hidden-by-filter" data-status="revived" onclick="toggleStatusFilter('revived')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Revived">
+                <div id="filter-count-revived" style="font-weight:bold;font-size:12px;color:#757575">0</div>
+              </div>
+              <div class="stat-card hidden-by-filter" data-status="semi-revived" onclick="toggleStatusFilter('semi-revived')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Semi-Revived">
+                <div id="filter-count-semi-revived" style="font-weight:bold;font-size:12px;color:#424242">0</div>
+              </div>
+              <div class="stat-card hidden-by-filter" data-status="dead" onclick="toggleStatusFilter('dead')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Dead">
+                <div id="filter-count-dead" style="font-weight:bold;font-size:12px;color:var(--danger)">0</div>
+              </div>
+              <div class="stat-card hidden-by-filter" data-status="untested" onclick="toggleStatusFilter('untested')" style="padding:3px 6px;cursor:pointer;border-radius:4px;min-width:36px;text-align:center" title="Untested">
+                <div id="filter-count-untested" style="font-weight:bold;font-size:12px;color:var(--muted)">0</div>
+              </div>
+            </div>
+          </div>
+          <div id="capability-filters" style="display:flex;gap:4px;align-items:center">
+            <span style="font-size:12px;color:var(--muted)">Ready:</span>
+            <div class="stat-card" data-cap="web_https" onclick="toggleCapabilityFilter('web_https')" style="padding:2px 8px;cursor:pointer;border-radius:4px;text-align:center;opacity:0.5" title="Alive proxies that load HTTPS sites (web browsing ready)"><div style="font-size:9px;color:var(--muted)">Web</div><div id="cap-count-web" style="font-weight:bold;font-size:12px;color:var(--success)">0</div></div>
+            <div class="stat-card" data-cap="telegram" onclick="toggleCapabilityFilter('telegram')" style="padding:2px 8px;cursor:pointer;border-radius:4px;text-align:center;opacity:0.5" title="Alive proxies that reach the Telegram API"><div style="font-size:9px;color:var(--muted)">Telegram</div><div id="cap-count-telegram" style="font-weight:bold;font-size:12px;color:#0088cc">0</div></div>
+            <div class="stat-card" data-cap="remote_dns" onclick="toggleCapabilityFilter('remote_dns')" style="padding:2px 8px;cursor:pointer;border-radius:4px;text-align:center;opacity:0.5" title="Alive proxies that resolve DNS remotely (leak-safe)"><div style="font-size:9px;color:var(--muted)">DNS</div><div id="cap-count-dns" style="font-weight:bold;font-size:12px;color:#8b5cf6">0</div></div>
+          </div>
+          <span id="last-scan-info" style="font-size:11px;color:var(--text);background:var(--panel-light);padding:4px 10px;border-radius:12px;white-space:nowrap"></span>
+          <div style="display:flex;gap:4px;align-items:center;flex:1;justify-content:flex-end">
+            <button class="btn btn-sm" onclick="toggleColumnsMenu()">&#9881; Columns</button>
+            <div id="columns-menu" style="display:none;position:absolute;right:10px;top:50px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px;z-index:100;min-width:180px;max-height:400px;overflow-y:auto">
+              <div style="font-weight:bold;margin-bottom:8px">Show/Hide Columns</div>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('protocol', this.checked)"> Protocol</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('port', this.checked)"> Port</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('status', this.checked)"> Status</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('prev_state', this.checked)"> Previous State</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('delta', this.checked)"> Last Transition</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('cost', this.checked)"> Cost</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" onchange="toggleColumn('latency', this.checked)"> Latency Score</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" onchange="toggleColumn('reliability', this.checked)"> Reliability</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" onchange="toggleColumn('jitter', this.checked)"> Jitter Score</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" onchange="toggleColumn('recency', this.checked)"> Recency Score</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('prev_cost', this.checked)"> Previous Cost</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('speed', this.checked)"> Speed</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('web_https', this.checked)"> HTTPS OK</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('remote_dns', this.checked)"> Remote DNS</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('telegram', this.checked)"> Telegram</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('exit_ip', this.checked)"> Exit IP</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('alive', this.checked)"> Alive Hits</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('fails', this.checked)"> Fail Hits</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('total_checks', this.checked)"> Total Checks</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('consecutive_fails', this.checked)"> Consecutive Fails</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('country', this.checked)"> Country</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('region', this.checked)"> Region</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('city', this.checked)"> City</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('district', this.checked)"> District</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('zip', this.checked)"> ZIP</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('isp', this.checked)"> ISP</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('asn', this.checked)"> ASN</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('org', this.checked)"> Organization</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('location', this.checked)"> Location (Lat/Lon)</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('timezone', this.checked)"> Timezone</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('mobile', this.checked)"> Mobile</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('hosting', this.checked)"> Hosting</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('lastalive', this.checked)"> Last Alive</label>
+              <label style="display:block;margin:4px 0"><input type="checkbox" checked onchange="toggleColumn('lastcheck', this.checked)"> Last Checked</label>
+            </div>
+            <div style="display:flex;align-items:center;background:var(--panel-light);border-radius:6px;padding:2px">
+              <input type="number" id="auto-refresh-sec" value="30" min="5" max="300" style="width:45px;padding:4px 2px;border:none;background:transparent;color:var(--text);font-size:11px;text-align:center" onchange="setAutoRefreshInterval(parseInt(this.value))">
+              <button id="auto-refresh-btn" class="btn btn-sm" style="padding:4px 6px;border:none;background:transparent;border-left:1px solid var(--border);color:var(--text);font-size:14px" onclick="toggleAutoRefresh()" title="Auto-refresh">&#8635;</button>
+            </div>
+            <button class="btn btn-sm" id="btn-adv-search" style="background:var(--accent);color:#fff" onclick="openAdvSearch()">Search</button>
+            <button class="btn btn-sm" id="btn-export-csv" onclick="exportProxies('csv')">Export CSV</button>
+            <button class="btn btn-sm" id="btn-export-json" onclick="exportProxies('json')">Export JSON</button>
+          </div>
+        </div>
+        <div class="inventory-overview">
+          <div class="inventory-kpi"><span>Total</span><strong id="inventory-total">0</strong><small>all imported proxies</small></div>
+          <div class="inventory-kpi"><span>Alive</span><strong id="inventory-alive">0</strong><small>eligible status pool</small></div>
+          <div class="inventory-kpi"><span>Web-ready</span><strong id="inventory-web-ready">0</strong><small>HTTPS verified</small></div>
+          <div class="inventory-kpi"><span>Telegram-ready</span><strong id="inventory-telegram-ready">0</strong><small>Telegram reachable</small></div>
+          <div class="inventory-kpi"><span>Full-capability</span><strong id="inventory-full-capability">0</strong><small>HTTPS + DNS + Telegram</small></div>
+        </div>
+        <div class="inventory-context-bar">
+          <div id="inventory-filter-summary">Showing all active inventory filters.</div>
+          <div id="inventory-result-summary">Waiting for data...</div>
+        </div>
+        <div id="inventory-empty-state" class="inventory-empty-state" style="display:none">
+          <strong>No proxies match this view.</strong>
+          <span>Try clearing capability/status filters, importing fresh sources, or running monitor validation.</span>
+        </div>
+        <div class="table-wrap">
+          <table id="proxies-table">
+            <thead>
+              <tr>
+                <th class="sortable" style="position:sticky;left:0;z-index:2" onclick="sortTable('ip')">IP</th>
+                <th class="sortable col-toggle" data-col="protocol" onclick="sortTable('protocol')">Protocol</th>
+                <th class="sortable col-toggle" data-col="port" onclick="sortTable('port')">Port</th>
+                <th class="col-toggle" data-col="status">Status</th>
+                <th class="col-toggle" data-col="prev_state">Prev</th>
+                <th class="col-toggle" data-col="delta">Delta</th>
+                <th class="sortable col-toggle" data-col="cost" onclick="sortTable('cost')">Cost</th>
+                <th class="sortable col-toggle" data-col="latency" onclick="sortTable('latency')">Latency</th>
+                <th class="sortable col-toggle" data-col="reliability" onclick="sortTable('reliability')">Reliability</th>
+                <th class="sortable col-toggle" data-col="jitter" onclick="sortTable('jitter')">Jitter</th>
+                <th class="sortable col-toggle" data-col="recency" onclick="sortTable('recency')">Recency</th>
+                <th class="sortable col-toggle" data-col="prev_cost" onclick="sortTable('previous_cost')">Prev Cost</th>
+                <th class="sortable col-toggle" data-col="speed" onclick="sortTable('speed_ms')">Speed</th>
+                <th class="sortable col-toggle" data-col="web_https" onclick="sortTable('web_https_ok')">HTTPS OK</th>
+                <th class="sortable col-toggle" data-col="remote_dns" onclick="sortTable('remote_dns_ok')">Remote DNS</th>
+                <th class="sortable col-toggle" data-col="telegram" onclick="sortTable('telegram_ok')">Telegram</th>
+                <th class="sortable col-toggle" data-col="exit_ip" onclick="sortTable('exit_ip')">Exit IP</th>
+                <th class="sortable col-toggle" data-col="alive" onclick="sortTable('alive_hits')">Alive</th>
+                <th class="sortable col-toggle" data-col="fails" onclick="sortTable('fail_hits')">Fails</th>
+                <th class="sortable col-toggle" data-col="total_checks" onclick="sortTable('total_checks')">Total</th>
+                <th class="sortable col-toggle" data-col="consecutive_fails" onclick="sortTable('consecutive_fails')">Consec</th>
+                <th class="sortable col-toggle" data-col="country" onclick="sortTable('countryCode')">Country</th>
+                <th class="sortable col-toggle" data-col="region" onclick="sortTable('regionName')">Region</th>
+                <th class="sortable col-toggle" data-col="city" onclick="sortTable('city')">City</th>
+                <th class="sortable col-toggle" data-col="district" onclick="sortTable('district')">District</th>
+                <th class="sortable col-toggle" data-col="zip" onclick="sortTable('zip')">ZIP</th>
+                <th class="sortable col-toggle" data-col="isp" onclick="sortTable('isp')">ISP</th>
+                <th class="sortable col-toggle" data-col="asn" onclick="sortTable('asn')">ASN</th>
+                <th class="sortable col-toggle" data-col="org" onclick="sortTable('org')">Org</th>
+                <th class="col-toggle" data-col="location">Location</th>
+                <th class="col-toggle" data-col="timezone">Timezone</th>
+                <th class="col-toggle" data-col="mobile">Mobile</th>
+                <th class="col-toggle" data-col="hosting">Hosting</th>
+                <th class="sortable col-toggle" data-col="lastalive" onclick="sortTable('last_alive')">Last Alive</th>
+                <th class="sortable col-toggle" data-col="lastcheck" onclick="sortTable('last_checked')">Last Check</th>
+                <th id="actions-header" style="position:sticky;right:0;z-index:2">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="proxies-tbody"></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:12px;color:var(--muted)">Per page:</span>
+            <select id="page-size" class="form-input" style="width:auto;padding:4px" onchange="changePageSize(this.value)">
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+            </select>
+          </div>
+          <div class="pager-info" id="pager-info"></div>
+          <div class="pager-btns" id="pager-btns"></div>
+        </div>
+      </div>
+    </div>

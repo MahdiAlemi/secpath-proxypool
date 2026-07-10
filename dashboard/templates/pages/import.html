@@ -1,0 +1,83 @@
+<!-- IMPORT TAB -->
+    <div id="tab-import" class="tab-content {{ 'hidden' if tab!='import' else '' }}">
+      <div class="card import-center-card">
+        <div class="card-header import-center-header">
+          <div>
+            <div class="card-title">Source Center <span class="health-pill">Fresh inputs</span></div>
+            <div class="section-hint">Bring in raw proxies from URLs, grouped source configs, or manual lists before validation.</div>
+          </div>
+          <button class="btn btn-sm" onclick="showTab('monitor', event)">Validate after import</button>
+        </div>
+        <div class="import-source-overview">
+          <div class="import-source-card active" data-import-mode="url" onclick="showImportTab('url', event)"><strong>Single URL</strong><span>Fetch one proxy list with a selected protocol label.</span></div>
+          <div class="import-source-card" data-import-mode="links" onclick="showImportTab('links', event)"><strong>Source config</strong><span>Import multiple grouped URLs from INI-style config.</span></div>
+          <div class="import-source-card" data-import-mode="manual" onclick="showImportTab('manual', event)"><strong>Manual batch</strong><span>Paste or upload raw proxies for quick ingest.</span></div>
+        </div>
+        <div class="import-guidance">
+          <div><strong>Import checklist</strong><span>Count first when possible, import, then run Validation Center to qualify HTTPS/DNS/Telegram readiness.</span></div>
+          <div id="import-mode-summary">Mode: Single URL · Best for one fresh public list.</div>
+        </div>
+        <div class="tabs import-mode-tabs">
+          <button class="tab-btn active" onclick="showImportTab('url', event)">From URL</button>
+          <button class="tab-btn" onclick="showImportTab('links', event)">From Links Config</button>
+          <button class="tab-btn" onclick="showImportTab('manual', event)">Manual Entry</button>
+        </div>
+
+        <div id="import-url" class="import-panel">
+          <div class="form-group">
+            <label class="form-label">Protocol</label>
+            <select id="import-url-proto" class="form-input" style="width:auto">
+              <option value="http">HTTP</option>
+              <option value="https">HTTPS</option>
+              <option value="socks4">SOCKS4</option>
+              <option value="socks5">SOCKS5</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Proxy List URL</label>
+            <input type="text" id="import-url-input" class="form-input" placeholder="https://raw.githubusercontent.com/..." oninput="clearImportCount('url')">
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+            <button class="btn btn-sm" onclick="countImportUrl()">Count</button>
+            <span id="import-url-count" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+          <button class="btn btn-primary" id="import-url-btn" onclick="doImportUrl()">Import</button>
+        </div>
+
+        <div id="import-links" class="import-panel hidden">
+          <div class="form-group">
+            <label class="form-label">Upload File (.ini)</label>
+            <input type="file" id="import-links-file" class="form-input" accept=".ini,.txt" onchange="handleLinksFileUpload()">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Or paste below:</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Links Config (INI format)</label>
+            <textarea id="import-links-content" class="form-input" placeholder="[http]&#10;https://...&#10;[socks5]&#10;https://..." oninput="clearImportCount('links')"></textarea>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+            <button class="btn btn-sm" onclick="countImportLinks()">Count</button>
+            <span id="import-links-count" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+          <button class="btn btn-primary" id="import-links-btn" onclick="doImportLinks()">Import</button>
+        </div>
+
+        <div id="import-manual" class="import-panel hidden">
+          <div class="form-group">
+            <label class="form-label">Upload File (txt/json)</label>
+            <input type="file" id="import-manual-file" class="form-input" accept=".txt,.json" onchange="handleManualFileUpload()">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Or enter below:</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Proxies (one per line, format: protocol ip:port [user] [pass])</label>
+            <textarea id="import-manual-content" class="form-input" placeholder="http 192.168.1.1:8080&#10;socks5 10.0.0.1:1080 user pass" oninput="clearImportCount('manual')"></textarea>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+            <button class="btn btn-sm" onclick="countImportManual()">Count</button>
+            <span id="import-manual-count" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+          <button class="btn btn-primary" id="import-manual-btn" onclick="doImportManual()">Import</button>
+        </div>
+
+        <div id="import-result" class="form-group" style="margin-top:16px"></div>
+      </div>
+    </div>

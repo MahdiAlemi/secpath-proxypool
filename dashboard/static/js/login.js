@@ -5,8 +5,13 @@ async function doLogin(event) {
   const form = event.currentTarget;
   const button = form.querySelector('button[type="submit"]');
   const errorBox = document.querySelector('.error');
+  const original = button.innerHTML;
   button.disabled = true;
-  button.textContent = 'Signing in...';
+  button.innerHTML = '<span>Signing in…</span><span aria-hidden="true">↻</span>';
+  if (errorBox) {
+    errorBox.hidden = true;
+    errorBox.textContent = '';
+  }
 
   try {
     const response = await fetch('/login', {
@@ -21,15 +26,19 @@ async function doLogin(event) {
       window.location.assign(response.url);
       return;
     }
-    errorBox.textContent = response.status === 429
-      ? 'Too many failed attempts. Try again later.'
-      : 'Invalid credentials or expired form. Refresh and try again.';
-    errorBox.style.display = 'block';
+    if (errorBox) {
+      errorBox.textContent = response.status === 429
+        ? 'Too many failed attempts. Try again later.'
+        : 'The username or password is not valid.';
+      errorBox.hidden = false;
+    }
   } catch (_error) {
-    errorBox.textContent = 'Login failed';
-    errorBox.style.display = 'block';
+    if (errorBox) {
+      errorBox.textContent = 'The dashboard could not be reached. Check the local service and try again.';
+      errorBox.hidden = false;
+    }
   } finally {
     button.disabled = false;
-    button.textContent = 'Sign in';
+    button.innerHTML = original;
   }
 }

@@ -86,7 +86,7 @@ class CockpitRenderTest(unittest.TestCase):
                 res = client.get('/index?tab=cockpit')
                 self.assertEqual(res.status_code, 200)
                 self.assertIn(b'tab-cockpit', res.data)
-                self.assertIn(b'ProxyPool readiness overview', res.data)
+                self.assertIn(b'Know what is ready before you route traffic.', res.data)
         finally:
             if getattr(db, 'Session', None) is not None:
                 db.Session.remove()
@@ -108,7 +108,7 @@ class DefaultLandingTest(unittest.TestCase):
                 res = client.get('/')
                 self.assertEqual(res.status_code, 200)
                 self.assertIn(b'tab-cockpit', res.data)
-                self.assertIn(b'ProxyPool readiness overview', res.data)
+                self.assertIn(b'Know what is ready before you route traffic.', res.data)
         finally:
             if getattr(db, 'Session', None) is not None:
                 db.Session.remove()

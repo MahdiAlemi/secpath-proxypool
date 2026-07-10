@@ -161,3 +161,7 @@ Operational states and recovery behavior are documented in [`docs/MONITOR_LIFECY
 Proxy listeners now default to loopback, reject unauthenticated non-loopback binds unless an explicit override is set, keep listener credentials out of process arguments, and use process-safe runtime claims. HTTP CONNECT, normal HTTP forwarding, SOCKS4/SOCKS4a, SOCKS5, upstream HTTPS TLS/SNI, bounded concurrency, retry exclusion, and sticky client affinity are covered by regression tests.
 
 Operational behavior and protocol boundaries are documented in [`docs/PROXY_SERVER_CORE.md`](docs/PROXY_SERVER_CORE.md).
+
+## New dashboard foundation
+
+The dashboard now uses a responsive sidebar shell, a focused operational Cockpit, modular Jinja page templates, and a shared light/dark design system. See `docs/UI_FOUNDATION.md` for the phase boundary and migration structure.

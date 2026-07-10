@@ -1,0 +1,752 @@
+<!-- SETTINGS MODAL -->
+<div id="modal-settings" class="modal">
+  <div class="modal-content operations-modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Operations Center</div>
+        <div class="section-hint">Manage dashboard access, database backups, diagnostics, cleanup, and destructive maintenance.</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-settings')">&times;</button>
+    </div>
+
+    <div class="settings-ops-grid">
+      <div class="settings-op-card">
+        <div class="settings-op-title">Dashboard access</div>
+        <div class="settings-op-desc">Update the local dashboard password used for admin access.</div>
+        <div class="settings-inline-form">
+          <input type="password" id="new-password" class="form-input" placeholder="New password">
+          <button class="btn btn-primary" onclick="changePassword()">Update</button>
+        </div>
+      </div>
+
+      <div class="settings-op-card">
+        <div class="settings-op-title">Database</div>
+        <div class="settings-op-desc">Export a backup or import an existing SQLite/MySQL backup file.</div>
+        <div class="settings-db-row">
+          <span id="db-info" class="settings-db-pill">SQLite</span>
+          <span id="settings-db-summary" class="settings-muted">Waiting for settings...</span>
+        </div>
+        <div class="settings-actions-row">
+          <button class="btn btn-sm" onclick="backupDB()">Export</button>
+          <button class="btn btn-sm" onclick="openImportModal()">Import</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section-card">
+      <div class="settings-section-header">
+        <div>
+          <div class="settings-op-title">Diagnostics / Preflight</div>
+          <div class="settings-op-desc">Check DB health, readiness counters, runtime files, and recommended next actions.</div>
+        </div>
+        <div class="settings-actions-row">
+          <button class="btn btn-sm" onclick="loadDiagnostics()">Refresh Diagnostics</button>
+          <span id="diagnostics-status" class="settings-muted">Open settings to load snapshot.</span>
+        </div>
+      </div>
+      <div id="diagnostics-panel" class="settings-diagnostics-grid"></div>
+      <div id="diagnostics-recommendations" class="settings-recommendations"></div>
+    </div>
+
+    <div class="settings-section-card">
+      <div class="settings-section-header">
+        <div>
+          <div class="settings-op-title">Runtime cleanup</div>
+          <div class="settings-op-desc">Cleanup actions do not delete the database. Normalize legacy statuses before re-validation.</div>
+        </div>
+      </div>
+      <div class="settings-actions-row">
+        <button class="btn btn-sm" onclick="cleanupLogs()">Clear Logs</button>
+        <button class="btn btn-sm" onclick="cleanupRuntimeFiles()">Clear Runtime Files</button>
+        <button class="btn btn-sm btn-primary" onclick="cleanupLegacyStatuses()" title="Recommended after upgrading: reclassify old pre-Phase-5 revived rows so a monitor run re-validates them">⚡ Normalize Legacy Statuses</button>
+      </div>
+    </div>
+
+    <div id="import-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000">
+      <div style="background:var(--panel);padding:24px;border-radius:12px;max-width:400px;margin:100px auto">
+        <h3>Import Database</h3>
+        <div style="margin:16px 0">
+          <label class="form-label">Mode</label>
+          <select id="import-mode" class="form-input">
+            <option value="append">Append (add to existing)</option>
+            <option value="replace">Replace (clear all first)</option>
+          </select>
+        </div>
+        <div style="margin:16px 0">
+          <label class="form-label">Backup File (.sql for MySQL, .sqlite for SQLite)</label>
+          <input type="file" id="import-file" accept=".sql,.sqlite" class="form-input">
+        </div>
+        <div style="display:flex;gap:12px;justify-content:flex-end">
+          <button class="btn" onclick="document.getElementById('import-modal').style.display='none'">Cancel</button>
+          <button class="btn btn-primary" id="import-btn" onclick="importDB()">Import</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-danger-zone">
+      <div class="settings-section-header">
+        <div>
+          <div class="settings-op-title">Danger zone</div>
+          <div class="settings-op-desc">Permanently delete proxies by protocol/status or use quick destructive cleanup actions.</div>
+        </div>
+      </div>
+      <div class="settings-danger-controls">
+        <select id="delete-protocol" class="form-input">
+          <option value="all">All Protocols</option>
+          <option value="http">HTTP</option>
+          <option value="https">HTTPS</option>
+          <option value="socks4">SOCKS4</option>
+          <option value="socks5">SOCKS5</option>
+        </select>
+        <select id="delete-status" class="form-input">
+          <option value="all">All Status</option>
+          <option value="alive">Alive Only</option>
+          <option value="flaky">Flaky Only</option>
+          <option value="cooling">Cooling Only</option>
+          <option value="soft">Soft Only</option>
+          <option value="revived">Revived Only</option>
+          <option value="semi-revived">Semi-Revived Only</option>
+          <option value="dead">Dead Only</option>
+          <option value="untested">Untested Only</option>
+        </select>
+        <button class="btn btn-danger" onclick="bulkDeleteProxies()">Delete Selected</button>
+      </div>
+      <div class="settings-actions-row danger-actions">
+        <button class="btn btn-sm btn-danger" onclick="clearDeadProxies()">Clear All Dead</button>
+        <button class="btn btn-sm btn-danger" onclick="clearByProtocol('http')">Clear HTTP</button>
+        <button class="btn btn-sm btn-danger" onclick="clearByProtocol('https')">Clear HTTPS</button>
+        <button class="btn btn-sm btn-danger" onclick="clearByProtocol('socks4')">Clear SOCKS4</button>
+        <button class="btn btn-sm btn-danger" onclick="clearByProtocol('socks5')">Clear SOCKS5</button>
+        <button class="btn btn-sm btn-danger" onclick="clearAllProxies()">Clear ALL</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADD PROXY MODAL -->
+<div id="modal-add" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-title">Add Proxy</div>
+      <button class="modal-close" onclick="closeModal('modal-add')">&times;</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Protocol</label>
+      <select id="add-proto" class="form-input" style="width:auto">
+        <option value="http">HTTP</option>
+        <option value="https">HTTPS</option>
+        <option value="socks4">SOCKS4</option>
+        <option value="socks5">SOCKS5</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">IP Address</label>
+      <input type="text" id="add-ip" class="form-input" placeholder="192.168.1.1">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Port</label>
+      <input type="number" id="add-port" class="form-input" placeholder="8080">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Username (optional)</label>
+      <input type="text" id="add-user" class="form-input">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password (optional)</label>
+      <input type="password" id="add-pass" class="form-input">
+    </div>
+    <button class="btn btn-primary" onclick="doAddProxy()">Add Proxy</button>
+  </div>
+</div>
+
+<!-- BULK ADD MODAL -->
+<div id="modal-bulk" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-title">Bulk Add Proxies</div>
+      <button class="modal-close" onclick="closeModal('modal-bulk')">&times;</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Proxies (one per line)</label>
+      <textarea id="bulk-proxies" class="form-input" style="min-height:200px" placeholder="protocol://ip:port&#10;protocol://user:pass@ip:port&#10;ip:port user pass"></textarea>
+    </div>
+    <button class="btn btn-primary" onclick="doBulkAdd()">Add Proxies</button>
+  </div>
+</div>
+
+<!-- EDIT PROXY MODAL -->
+<div id="modal-edit" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-title">Edit Proxy</div>
+      <button class="modal-close" onclick="closeModal('modal-edit')">&times;</button>
+    </div>
+    <input type="hidden" id="edit-id">
+    <div class="form-group">
+      <label class="form-label">Protocol</label>
+      <select id="edit-proto" class="form-input" style="width:auto">
+        <option value="http">HTTP</option>
+        <option value="https">HTTPS</option>
+        <option value="socks4">SOCKS4</option>
+        <option value="socks5">SOCKS5</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">IP Address</label>
+      <input type="text" id="edit-ip" class="form-input">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Port</label>
+      <input type="number" id="edit-port" class="form-input">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Username</label>
+      <input type="text" id="edit-user" class="form-input">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input type="password" id="edit-pass" class="form-input">
+    </div>
+    <button class="btn btn-primary" onclick="doEditProxy()">Save Changes</button>
+  </div>
+</div>
+
+<!-- ADVANCED SEARCH MODAL -->
+<div id="modal-adv-search" class="modal">
+  <div class="modal-content" style="max-width:600px;max-height:85vh;overflow:auto">
+    <div class="modal-header">
+      <div class="modal-title">Advanced Search</div>
+      <button class="modal-close" onclick="closeModal('modal-adv-search')">X</button>
+    </div>
+    <div id="adv-search-rules" style="margin-bottom:16px"></div>
+    <button class="btn btn-sm" onclick="addSearchRule()" style="margin-bottom:16px">+ Add Rule</button>
+    <div style="display:flex;gap:12px">
+      <button class="btn btn-primary" onclick="applyAdvancedSearch()">Apply</button>
+      <button class="btn" onclick="clearAdvancedSearch()">Clear</button>
+      <button class="btn" onclick="closeModal('modal-adv-search')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD MONITOR MODAL -->
+<div id="modal-add-monitor" class="modal">
+  <div class="modal-content" style="max-width:550px;max-height:85vh;overflow:auto">
+    <div class="modal-header">
+      <div class="modal-title">Add New Monitor Profile</div>
+      <button class="modal-close" onclick="closeModal('modal-add-monitor')">&times;</button>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Basic Settings</div>
+      <div class="form-group">
+        <label class="form-label">Profile Name *</label>
+        <input type="text" id="monitor-name" class="form-input" placeholder="e.g., socks4-alive-us" maxlength="50">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Unique name. Letters, numbers, dashes, underscores only.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Protocol Filter</label>
+        <select id="monitor-protocol" class="form-input">
+          <option value="">All Protocols</option>
+          <option value="http">HTTP</option>
+          <option value="https">HTTPS</option>
+          <option value="socks4">SOCKS4</option>
+          <option value="socks5">SOCKS5</option>
+          <option value="http,https">HTTP+HTTPS</option>
+          <option value="socks4,socks5">SOCKS4+SOCKS5</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Status Filter</label>
+        <div style="display:flex;gap:4px;align-items:center">
+          <div onclick="toggleMonitorStatus('alive')" id="monitor-status-alive" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:var(--success);color:#fff;font-size:11px;font-weight:500">Alive</div>
+          <div onclick="toggleMonitorStatus('flaky')" id="monitor-status-flaky" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:#f59e0b;color:#fff;font-size:11px;font-weight:500">Flaky</div>
+          <div onclick="toggleMonitorStatus('cooling')" id="monitor-status-cooling" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:#8b5cf6;color:#fff;font-size:11px;font-weight:500">Cooling</div>
+          <div onclick="toggleMonitorStatus('soft')" id="monitor-status-soft" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:#FF9800;color:#fff;font-size:11px;font-weight:500">Soft</div>
+          <div onclick="toggleMonitorStatus('revived')" id="monitor-status-revived" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:#757575;color:#fff;font-size:11px;font-weight:500">Revived</div>
+          <div onclick="toggleMonitorStatus('semi-revived')" id="monitor-status-semi-revived" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:#424242;color:#fff;font-size:11px;font-weight:500">Semi-Revived</div>
+          <div onclick="toggleMonitorStatus('dead')" id="monitor-status-dead" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:var(--danger);color:#fff;font-size:11px;font-weight:500">Dead</div>
+          <div onclick="toggleMonitorStatus('untested')" id="monitor-status-untested" style="padding:4px 8px;cursor:pointer;border-radius:12px;background:var(--muted);color:#fff;font-size:11px;font-weight:500">Untested</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Check URLs (comma-separated)</label>
+        <input type="text" id="monitor-check-urls" class="form-input" placeholder="https://api.ipify.org, https://ident.me">
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Performance</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div class="form-group">
+          <label class="form-label">Threads</label>
+          <input type="number" id="monitor-threads" class="form-input" value="50">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Timeout (sec)</label>
+          <input type="number" id="monitor-timeout" class="form-input" value="5">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Probes</label>
+          <input type="number" id="monitor-probes" class="form-input" value="2">
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Run Mode</div>
+      <div class="form-group">
+        <label class="form-label">Mode</label>
+        <select id="monitor-run-mode" class="form-input" onchange="toggleRunModeOptions()">
+          <option value="once">Run Once</option>
+          <option value="infinite">Run Infinite (continuous)</option>
+          <option value="restart">Run After Complete (restart when done)</option>
+          <option value="schedule">Schedule</option>
+          <option value="custom">Custom Interval</option>
+        </select>
+      </div>
+      <div id="run-mode-options" style="display:none">
+        <div class="form-group" id="interval-option" style="display:none">
+          <label class="form-label">Interval (seconds)</label>
+          <input type="number" id="monitor-interval" class="form-input" value="60" placeholder="60">
+        </div>
+        <div id="schedule-option" style="display:none">
+          <div class="form-group">
+            <label class="form-label">Time (HH:MM)</label>
+            <input type="text" id="monitor-schedule-time" class="form-input" placeholder="02:00">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Days</label>
+            <select id="monitor-schedule-days" class="form-input">
+              <option value="daily">Every Day</option>
+              <option value="Mon,Tue,Wed,Thu,Fri">Weekdays (Mon-Fri)</option>
+              <option value="Sat,Sun">Weekends (Sat-Sun)</option>
+              <option value="Mon">Every Monday</option>
+              <option value="Wed">Every Wednesday</option>
+              <option value="Fri">Every Friday</option>
+              <option value="1,15">1st and 15th of Month</option>
+            </select>
+          </div>
+        </div>
+        <div id="custom-option" style="display:none">
+          <div class="form-group">
+            <label class="form-label">Run every (hours)</label>
+            <input type="number" id="monitor-custom-every" class="form-input" value="24" placeholder="24">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Advanced</div>
+      <div class="form-group">
+        <label class="form-label">GEO Extraction</label>
+        <select id="monitor-geo" class="form-input">
+          <option value="true">Enabled</option>
+          <option value="false">Disabled</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Create Systemd Service</label>
+        <select id="monitor-create-service" class="form-input">
+          <option value="no">No</option>
+          <option value="yes">Yes (auto-start on boot)</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:12px">
+      <button class="btn btn-primary" onclick="createMonitorProfile()">Create</button>
+      <button class="btn" onclick="closeModal('modal-add-monitor')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- SERVER SETTINGS MODAL -->
+<div id="modal-server-settings" class="modal">
+  <div class="modal-content" style="max-width:600px;max-height:80vh;overflow:auto">
+    <div class="modal-header">
+      <div class="modal-title">Server Settings</div>
+      <button class="modal-close" onclick="closeModal('modal-server-settings')">&times;</button>
+    </div>
+    <div id="server-settings-content" style="margin-bottom:16px"></div>
+    <div style="display:flex;gap:12px">
+      <button class="btn btn-primary" onclick="editServerSettings()">Edit & Restart</button>
+      <button class="btn" onclick="closeModal('modal-server-settings')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD SERVER MODAL -->
+<div id="modal-add-server" class="modal">
+  <div class="modal-content" style="max-width:700px;max-height:85vh;overflow:auto">
+    <div class="modal-header">
+      <div class="modal-title">Add New Server</div>
+      <button class="modal-close" onclick="closeModal('modal-add-server')">&times;</button>
+    </div>
+
+    <div class="server-wizard-steps" id="server-wizard-steps">
+      <button class="server-wizard-step active" type="button" onclick="setServerWizardStep(0)"><span>1</span><strong>Use case</strong><small>Preset & listener</small></button>
+      <button class="server-wizard-step" type="button" onclick="setServerWizardStep(1)"><span>2</span><strong>Routing</strong><small>Rotation & auth</small></button>
+      <button class="server-wizard-step" type="button" onclick="setServerWizardStep(2)"><span>3</span><strong>Filters</strong><small>Geo & network</small></button>
+      <button class="server-wizard-step" type="button" onclick="setServerWizardStep(3)"><span>4</span><strong>Review</strong><small>Preflight</small></button>
+    </div>
+
+    <div id="server-wizard-review" class="server-wizard-review" style="display:none">
+      <div class="review-header">
+        <div><strong>Profile review</strong><span>Check the generated profile and candidate pool before creating it.</span></div>
+        <button class="btn btn-sm" type="button" onclick="refreshServerCandidatePreview()">Refresh Preflight</button>
+      </div>
+      <div id="server-review-grid" class="server-review-grid"></div>
+      <div id="server-preview-result" class="server-preview-result"></div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Basic Settings</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        <div class="form-group">
+          <label class="form-label">Protocol</label>
+          <select id="server-proto" class="form-input">
+            <option value="http">HTTP</option>
+            <option value="https">HTTPS</option>
+            <option value="socks4">SOCKS4</option>
+            <option value="socks5">SOCKS5</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bind Address</label>
+          <input type="text" id="server-bind" class="form-input" value="127.0.0.1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Port</label>
+          <input type="number" id="server-port" class="form-input" value="8080">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Rotate Mode</label>
+          <select id="server-rotate" class="form-input">
+            <option value="fixed">Fixed</option>
+            <option value="per_connection">Per Connection</option>
+            <option value="better_cost" selected>Better Cost</option>
+            <option value="time">Time</option>
+            <option value="sticky">Sticky</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Rotation Settings</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        <div class="form-group">
+          <label class="form-label">Rotate Interval</label>
+          <input type="number" id="server-rotate-interval" class="form-input" value="60">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Min Cost</label>
+          <input type="number" id="server-min-cost" class="form-input" value="0.0" step="0.1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cost Threshold</label>
+          <input type="number" id="server-cost" class="form-input" value="" placeholder="Optional" step="0.1">
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Authentication</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div class="form-group">
+          <label class="form-label">Upstream Auth</label>
+          <select id="server-auth-required" class="form-input">
+            <option value="">Any</option>
+            <option value="auth">With Auth</option>
+            <option value="no_auth">No Auth</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" id="server-user" class="form-input" placeholder="Client username">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" id="server-pass" class="form-input" placeholder="Client password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Public no-auth</label>
+          <select id="server-allow-public-no-auth" class="form-input">
+            <option value="false" selected>Blocked (recommended)</option>
+            <option value="true">Allow explicitly</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">TLS/SSL (for HTTPS)</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+        <div class="form-group">
+          <label class="form-label">Cert File (PEM)</label>
+          <input type="text" id="server-certfile" class="form-input" placeholder="/path/to/cert.pem">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Key File (PEM)</label>
+          <input type="text" id="server-keyfile" class="form-input" placeholder="/path/to/key.pem">
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Upstream Proxy</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div class="form-group">
+          <label class="form-label">Sticky Upstream</label>
+          <input type="text" id="server-sticky-upstream" class="form-input" placeholder="socks5://user:pass@ip:port">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Upstream Protocol</label>
+          <input type="text" id="server-upstream-proto" class="form-input" placeholder="http,https,socks5">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Insecure Upstream</label>
+          <select id="server-insecure-upstream" class="form-input">
+            <option value="false">No</option>
+            <option value="true">Yes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Use Case Preset</label>
+          <select id="server-use-case" class="form-input" onchange="applyServerUseCase(this.value)">
+            <option value="custom">Custom (manual)</option>
+            <option value="web" selected>Web Browsing (HTTPS)</option>
+            <option value="telegram">Telegram (HTTPS+DNS+TG)</option>
+            <option value="scraping">Scraping / HTTP</option>
+          </select>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Presets set the Require flags below automatically.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Candidate Statuses</label>
+          <input type="text" id="server-candidate-statuses" class="form-input" value="alive" placeholder="alive or alive,soft">
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Production default: alive. Dev/testing: alive,soft.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Require HTTPS OK</label>
+          <select id="server-require-web-https" class="form-input">
+            <option value="false">No</option>
+            <option value="true" selected>Yes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Require Remote DNS</label>
+          <select id="server-require-remote-dns" class="form-input">
+            <option value="false" selected>No</option>
+            <option value="true">Yes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Require Telegram OK</label>
+          <select id="server-require-telegram" class="form-input">
+            <option value="false" selected>No</option>
+            <option value="true">Yes</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
+      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Proxy Filters</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div class="form-group">
+          <label class="form-label">Country Codes</label>
+          <input type="text" id="server-country" class="form-input" placeholder="US,GB,DE">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Regions</label>
+          <input type="text" id="server-regions" class="form-input" placeholder="California,Texas">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cities</label>
+          <input type="text" id="server-cities" class="form-input" placeholder="Los Angeles,New York">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Organizations</label>
+          <input type="text" id="server-orgs" class="form-input" placeholder="Org name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ISP</label>
+          <input type="text" id="server-isp" class="form-input" placeholder="ISP name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ASN</label>
+          <input type="text" id="server-asn" class="form-input" placeholder="AS12345">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Continent Code</label>
+          <input type="text" id="server-continent" class="form-input" placeholder="NA,EU">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Zip Codes</label>
+          <input type="text" id="server-zip" class="form-input" placeholder="10001,90001">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Timezones</label>
+          <input type="text" id="server-timezones" class="form-input" placeholder="America/New_York">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Mobile</label>
+          <select id="server-mobile" class="form-input">
+            <option value="">Any</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Proxy</label>
+          <select id="server-proxy" class="form-input">
+            <option value="">Any</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Hosting</label>
+          <select id="server-hosting" class="form-input">
+            <option value="">Any</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="server-wizard-footer">
+      <button class="btn" type="button" id="server-wizard-prev" onclick="serverWizardPrev()">Back</button>
+      <button class="btn btn-primary" type="button" id="server-wizard-next" onclick="serverWizardNext()">Next</button>
+      <button class="btn btn-success" type="button" id="server-wizard-submit" onclick="createServerProfile()" style="display:none">Create Profile</button>
+      <button class="btn" type="button" onclick="closeModal('modal-add-server')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- USERS MODAL -->
+<div id="modal-users" class="modal">
+  <div class="modal-content" style="max-width:700px;max-height:80vh;overflow:auto">
+    <div class="modal-header">
+      <div class="modal-title">User Management</div>
+      <button class="modal-close" onclick="closeModal('modal-users')">&times;</button>
+    </div>
+    <div style="margin-bottom:16px">
+      <button class="btn btn-primary" onclick="showAddUserModal()">+ Add User</button>
+    </div>
+    <div id="users-list"></div>
+  </div>
+</div>
+
+<!-- ADD/EDIT USER MODAL -->
+<div id="modal-user-form" class="modal">
+  <div class="modal-content" style="max-width:600px">
+    <div class="modal-header">
+      <div class="modal-title" id="user-form-title">Add User</div>
+      <button class="modal-close" onclick="closeModal('modal-user-form')">&times;</button>
+    </div>
+    <input type="hidden" id="edit-user-id">
+    <div class="form-group">
+      <label class="form-label">Username</label>
+      <input type="text" id="user-username" class="form-input">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input type="password" id="user-password" class="form-input">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Role</label>
+      <select id="user-role" class="form-input" onchange="updateRolePermissions()">
+        <option value="user">User - Basic access</option>
+        <option value="superadmin">Superadmin - Advanced access</option>
+        <option value="admin">Admin - Full access</option>
+      </select>
+    </div>
+    <div id="role-description" style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:16px;font-size:12px;color:var(--muted)">
+      <div id="role-desc-user" style="display:block">
+        <strong>User</strong> - Can view proxies and server status only. Can be customized with additional permissions.
+      </div>
+      <div id="role-desc-superadmin" style="display:none">
+        <strong>Superadmin</strong> - Can manage proxies, monitor, server, and settings. Cannot manage users.
+      </div>
+      <div id="role-desc-admin" style="display:none">
+        <strong>Admin</strong> - Full access to everything including user management.
+      </div>
+    </div>
+    <div class="form-group" id="custom-perms-group">
+      <label class="form-label">Custom Permissions</label>
+      <div id="custom-perms-list" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:12px"></div>
+      <div id="proxy-filters-group" style="display:none;margin-top:16px">
+        <div onclick="togglePermCategory('proxy-filters')" style="font-weight:600;font-size:12px;color:var(--accent);margin-bottom:8px;padding:6px 8px;background:var(--panel-light);border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center">
+          <span>Proxy Access Filters</span>
+          <span id="proxy-filters-icon">▶</span>
+        </div>
+        <div id="proxy-filters" style="display:none;padding:4px 0">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Restrict which proxies this user can see</div>
+          <div style="margin-bottom:16px">
+            <div style="font-size:12px;font-weight:500;margin-bottom:4px">Allowed Statuses:</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <label><input type="checkbox" class="proxy-filter-status" value="alive"> Alive</label>
+              <label><input type="checkbox" class="proxy-filter-status" value="flaky"> Flaky</label>
+              <label><input type="checkbox" class="proxy-filter-status" value="cooling"> Cooling</label>
+              <label><input type="checkbox" class="proxy-filter-status" value="soft"> Soft</label>
+              <label><input type="checkbox" class="proxy-filter-status" value="revived"> Revived</label>
+              <label><input type="checkbox" class="proxy-filter-status" value="semi-revived"> Semi-Revived</label>
+              <label><input type="checkbox" class="proxy-filter-status" value="dead"> Dead</label>
+              <label><input type="checkbox" class="proxy-filter-status" value="untested"> Untested</label>
+            </div>
+          </div>
+          <div style="margin-top:16px">
+            <div style="font-size:12px;font-weight:500;margin-bottom:4px">Allowed Protocols:</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <label><input type="checkbox" class="proxy-filter-proto" value="http"> HTTP</label>
+              <label><input type="checkbox" class="proxy-filter-proto" value="https"> HTTPS</label>
+              <label><input type="checkbox" class="proxy-filter-proto" value="socks4"> SOCKS4</label>
+              <label><input type="checkbox" class="proxy-filter-proto" value="socks5"> SOCKS5</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="user-active" checked> Active
+      </label>
+    </div>
+    <div style="display:flex;gap:12px">
+      <button class="btn btn-primary" onclick="saveUser()">Save</button>
+      <button class="btn" onclick="closeModal('modal-user-form')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRMATION MODAL -->
+<div id="modal-confirm" class="modal">
+  <div class="modal-content" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title" id="confirm-title">Confirm</div>
+      <button class="modal-close" onclick="closeConfirmModal()">&times;</button>
+    </div>
+    <div id="confirm-message" style="margin-bottom:20px;font-size:14px"></div>
+    <div style="display:flex;gap:12px;justify-content:flex-end">
+      <button class="btn" onclick="closeConfirmModal()">Cancel</button>
+      <button class="btn btn-danger" id="confirm-btn" onclick="confirmAction()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ALERT MODAL -->
+<div id="modal-alert" class="modal">
+  <div class="modal-content" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title" id="alert-title">Alert</div>
+      <button class="modal-close" onclick="closeAlertModal()">&times;</button>
+    </div>
+    <div id="alert-message" style="margin-bottom:20px;font-size:14px"></div>
+    <div style="display:flex;gap:12px;justify-content:flex-end">
+      <button class="btn btn-primary" onclick="closeAlertModal()">OK</button>
+    </div>
+  </div>
+</div>
