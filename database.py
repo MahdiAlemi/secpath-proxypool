@@ -3,12 +3,17 @@ Database abstraction layer with SQLAlchemy
 Provides connection pooling and ORM models for MySQL
 """
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Index, event, Boolean, JSON
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.orm import declarative_base, sessionmaker, scoped_session
 from sqlalchemy.pool import QueuePool
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from config import config
+
+
+def utcnow():
+    """Return timezone-normalized UTC as naive datetime for existing DB columns."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 Base = declarative_base()
 
@@ -177,7 +182,7 @@ class User(Base):
     role = Column(String(20), default='user')  # admin, superadmin, user
     custom_permissions = Column(JSON, default={})
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     last_login = Column(DateTime, nullable=True)
     
     def to_dict(self):
@@ -200,7 +205,7 @@ class Token(Base):
     user_id = Column(Integer, nullable=False)
     token = Column(String(500), nullable=False)
     expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     
     __table_args__ = (
         Index('idx_token_user', 'user_id'),
@@ -215,7 +220,7 @@ class MonitorSession(Base):
     __tablename__ = 'monitor_sessions'
     
     id = Column(String(64), primary_key=True)
-    started_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, default=utcnow)
     config_snapshot = Column(Text, nullable=True)
     total_proxies = Column(Integer, default=0)
     tested_count = Column(Integer, default=0)
@@ -236,7 +241,7 @@ class MonitorTested(Base):
     
     session_id = Column(String(64), primary_key=True)
     proxy_id = Column(Integer, primary_key=True)
-    tested_at = Column(DateTime, default=datetime.utcnow)
+    tested_at = Column(DateTime, default=utcnow)
     
     __table_args__ = (
         Index('idx_tested_session', 'session_id'),

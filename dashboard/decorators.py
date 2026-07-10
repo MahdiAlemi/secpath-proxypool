@@ -1,17 +1,22 @@
 import jwt
 from functools import wraps
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flask import redirect, url_for, session, jsonify, g, request
 from dashboard.config import ROLE_PERMISSIONS, ALL_PERMISSIONS, JWT_SECRET, JWT_EXPIRY_HOURS
 from database import db, Token
+
+
+def utcnow():
+    """Return timezone-normalized UTC as naive datetime for DB compatibility."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def create_token(user_id):
     """Create JWT token and store in database"""
     payload = {
         'user_id': user_id,
-        'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS),
-        'iat': datetime.utcnow()
+        'exp': utcnow() + timedelta(hours=JWT_EXPIRY_HOURS),
+        'iat': utcnow()
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm='HS256')
     
@@ -35,7 +40,7 @@ def validate_token(token_str):
             if not token_record:
                 return None
             
-            if token_record.expires_at < datetime.utcnow():
+            if token_record.expires_at < utcnow():
                 db_session.delete(token_record)
                 db_session.commit()
                 return None
@@ -71,7 +76,7 @@ def delete_user_tokens(user_id):
 def cleanup_expired_tokens():
     """Remove expired tokens from database"""
     with db.session() as db_session:
-        db_session.query(Token).filter(Token.expires_at < datetime.utcnow()).delete()
+        db_session.query(Token).filter(Token.expires_at < utcnow()).delete()
         db_session.commit()
 
 
