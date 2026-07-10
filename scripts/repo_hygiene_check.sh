@@ -32,7 +32,7 @@ fi
 
 mapfile -t bad_modes < <(
   git ls-files -s | awk '$1 == "100755" {print $4}' |
-    grep -Ev '^(scripts/[^/]+\.sh|scripts/create_admin\.py|dashboard/app\.py|proxy_importer/app\.py|proxy_monitor/app\.py|proxy_server/app\.py|migrate\.py)$' || true
+    grep -Ev '^(scripts/[^/]+\.(sh|py)|dashboard/app\.py|proxy_importer/app\.py|proxy_monitor/app\.py|proxy_server/app\.py|migrate\.py)$' || true
 )
 if ((${#bad_modes[@]} > 0)); then
   echo "[FAIL] Non-entrypoint files have executable Git mode:"

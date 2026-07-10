@@ -447,3 +447,33 @@ The cleanup removes the retired UI compatibility stylesheet and normalizes execu
 ## Local runtime hardening
 
 The development dashboard binds to `127.0.0.1:5003` by default. Configure `DASHBOARD_HOST`, `DASHBOARD_PORT`, and the explicit `DASHBOARD_ALLOW_PUBLIC` override in `.env` when needed. Rotate exposed local secrets without printing them by running `python3 scripts/rotate_local_secrets.py`. See `docs/LOCAL_RUNTIME.md`.
+## 15. Release-candidate verification
+
+Install the verification dependency inside the active virtual environment:
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+```
+
+Run the complete non-deploying release check:
+
+```bash
+bash scripts/release_check.sh
+```
+
+After committing, require a clean Git tree:
+
+```bash
+bash scripts/release_check.sh --require-clean
+```
+
+Create and verify a private SQLite backup:
+
+```bash
+python3 scripts/sqlite_backup.py backup --source proxies.db --directory backups
+python3 scripts/sqlite_backup.py verify backups/proxies_backup_<timestamp>.sqlite
+```
+
+The migration CLI performs a dry-run unless `--execute` is present. A target
+replacement additionally requires `--replace --yes-replace`. See
+`docs/RELEASE_READINESS.md` before using either restore or migration.

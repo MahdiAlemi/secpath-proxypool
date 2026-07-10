@@ -1,156 +1,255 @@
 #!/usr/bin/env python3
+"""Safely migrate ProxyPool proxy records from SQLite to another SQLAlchemy DB.
+
+The command is dry-run by default.  Pass ``--execute`` to write data.  Existing
+proxy identities are skipped; ``--replace --yes-replace`` deletes only target
+proxy rows before migration and never drops user or audit tables.
 """
-Migrate data from SQLite to MySQL
-Usage: python migrate.py
-"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
 import sqlite3
-from tqdm import tqdm
-from database import db, Proxy, init_db
-from config import config
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Iterable
 
-def migrate_sqlite_to_mysql():
-    """Migrate all data from SQLite to MySQL"""
-    
-    print("[*] Starting migration from SQLite to MySQL...")
-    print(f"[*] SQLite DB: {config.SQLITE_DB_PATH}")
-    print(f"[*] MySQL: {config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}")
-    
-    # Connect to SQLite
+from sqlalchemy import DateTime, create_engine, func, select
+from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.pool import NullPool
+
+from database import Base, Proxy
+
+IDENTITY_COLUMNS = ("protocol", "ip", "port", "username", "password")
+JSON_COLUMNS = {"speed_history", "validation_summary"}
+
+
+
+
+def _target_matches_source(source: Path, target_url: str) -> bool:
+    url = make_url(target_url)
+    if not url.drivername.startswith("sqlite") or not url.database or url.database == ":memory:":
+        return False
+    target = Path(url.database)
+    if not target.is_absolute():
+        target = Path.cwd() / target
+    return target.resolve() == source.resolve()
+
+def _redacted_url(value: str) -> str:
+    return make_url(value).render_as_string(hide_password=True)
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value
+    text = str(value).strip().replace("Z", "+00:00")
     try:
-        sqlite_conn = sqlite3.connect(config.SQLITE_DB_PATH)
-        sqlite_conn.row_factory = sqlite3.Row
-        sqlite_cur = sqlite_conn.cursor()
-        print("[+] Connected to SQLite")
-    except Exception as e:
-        print(f"[!] Failed to connect to SQLite: {e}")
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+def _normalize_value(column_name: str, value: Any) -> Any:
+    column = Proxy.__table__.columns[column_name]
+    if value is None:
+        return None
+    if column_name in JSON_COLUMNS and isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    if isinstance(column.type, DateTime):
+        return _parse_datetime(value)
+    return value
+
+
+def inspect_source(path: Path) -> tuple[int, list[str]]:
+    source = path.resolve()
+    if not source.is_file():
+        raise FileNotFoundError(source)
+    connection = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        if "proxies" not in tables:
+            raise ValueError("Source database does not contain the proxies table")
+        columns = [row[1] for row in connection.execute("PRAGMA table_info(proxies)")]
+        missing = set(IDENTITY_COLUMNS) - set(columns)
+        if missing:
+            raise ValueError("Source proxies table is missing identity columns: " + ", ".join(sorted(missing)))
+        total = int(connection.execute("SELECT COUNT(*) FROM proxies").fetchone()[0])
+        return total, columns
+    finally:
+        connection.close()
+
+
+def _iter_rows(path: Path, columns: list[str], batch_size: int) -> Iterable[list[dict[str, Any]]]:
+    quoted = ", ".join(f'"{name}"' for name in columns)
+    connection = sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    try:
+        cursor = connection.execute(f"SELECT {quoted} FROM proxies ORDER BY id")
+        while True:
+            rows = cursor.fetchmany(batch_size)
+            if not rows:
+                break
+            yield [
+                {name: _normalize_value(name, row[name]) for name in columns}
+                for row in rows
+            ]
+    finally:
+        connection.close()
+
+
+def _insert_ignore(engine: Engine, rows: list[dict[str, Any]]) -> None:
+    if not rows:
         return
-    
-    # Get count
-    sqlite_cur.execute("SELECT COUNT(*) as cnt FROM proxies")
-    total = sqlite_cur.fetchone()['cnt']
-    print(f"[*] Found {total} proxies in SQLite")
-    
-    if total == 0:
-        print("[!] No data to migrate")
-        sqlite_conn.close()
-        return
-    
-    # Initialize MySQL tables
-    print("[*] Creating MySQL tables...")
-    init_db()
-    
-    # Fetch all data from SQLite
-    print("[*] Fetching data from SQLite...")
-    sqlite_cur.execute("""
-        SELECT * FROM proxies
-    """)
-    
-    rows = sqlite_cur.fetchall()
-    
-    # Migrate in batches
-    batch_size = 1000
-    migrated = 0
-    errors = 0
-    
-    print(f"[*] Migrating {total} proxies to MySQL...")
-    
-    with db.session() as session:
-        for i, row in enumerate(tqdm(rows, desc="Migrating", unit="proxies")):
+    dialect = engine.dialect.name
+    table = Proxy.__table__
+    with engine.begin() as connection:
+        if dialect == "mysql":
+            from sqlalchemy.dialects.mysql import insert as mysql_insert
+
+            connection.execute(mysql_insert(table).values(rows).prefix_with("IGNORE"))
+            return
+        if dialect == "sqlite":
+            from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+            statement = sqlite_insert(table).values(rows).on_conflict_do_nothing(
+                index_elements=list(IDENTITY_COLUMNS)
+            )
+            connection.execute(statement)
+            return
+
+        for row in rows:
             try:
-                proxy = Proxy(
-                    id=row['id'],
-                    protocol=row['protocol'],
-                    ip=row['ip'],
-                    port=row['port'],
-                    username=row['username'] or '',
-                    password=row['password'] or '',
-                    resolved_ip=row['resolved_ip'],
-                    cost=row['cost'] or 1.0,
-                    alive_hits=row['alive_hits'] or 0,
-                    last_alive=_parse_datetime(row['last_alive']),
-                    last_checked=_parse_datetime(row['last_checked']),
-                    fail_hits=row['fail_hits'] or 0,
-                    last_fail=_parse_datetime(row['last_fail']),
-                    speed_ms=row['speed_ms'],
-                    continent=row['continent'],
-                    continentCode=row['continentCode'],
-                    country=row['country'],
-                    countryCode=row['countryCode'],
-                    region=row['region'],
-                    regionName=row['regionName'],
-                    city=row['city'],
-                    district=row['district'],
-                    zip=row['zip'],
-                    lat=row['lat'],
-                    lon=row['lon'],
-                    timezone=row['timezone'],
-                    isp=row['isp'],
-                    org=row['org'],
-                    asn=row['asn'],
-                    asname=row['asname'],
-                    mobile=row['mobile'],
-                    proxy=row['proxy'],
-                    hosting=row['hosting'],
-                    last_geo=_parse_datetime(row['last_geo']),
-                )
-                session.add(proxy)
-                migrated += 1
-                
-                # Commit every batch
-                if (i + 1) % batch_size == 0:
-                    session.commit()
-                    session.expunge_all()
-                    
-            except Exception as e:
-                errors += 1
-                if errors < 5:  # Show first few errors
-                    print(f"[!] Error migrating proxy {row.get('id', 'unknown')}: {e}")
+                with connection.begin_nested():
+                    connection.execute(table.insert().values(**row))
+            except IntegrityError:
                 continue
-    
-    sqlite_conn.close()
-    
-    # Verify migration
-    with db.session() as session:
-        mysql_count = session.query(Proxy).count()
-    
-    print("\n" + "="*50)
-    print("Migration Complete!")
-    print(f"SQLite count: {total}")
-    print(f"MySQL count:  {mysql_count}")
-    print(f"Migrated:     {migrated}")
-    print(f"Errors:       {errors}")
-    
-    if mysql_count == total:
-        print("[✓] Migration successful - counts match!")
-    else:
-        print("[!] Warning - counts don't match. Some records may have been skipped.")
-    print("="*50)
 
-def _parse_datetime(dt_str):
-    """Parse ISO datetime string to datetime object"""
-    if not dt_str:
-        return None
+
+def migrate(
+    *,
+    source: Path,
+    target_url: str,
+    batch_size: int,
+    replace: bool,
+) -> dict[str, Any]:
+    source_total, source_columns = inspect_source(source)
+    target_columns = [column.name for column in Proxy.__table__.columns if column.name != "id"]
+    copy_columns = [name for name in target_columns if name in source_columns]
+
+    engine = create_engine(target_url, poolclass=NullPool, pool_pre_ping=True)
     try:
-        from datetime import datetime
-        # Handle ISO format with timezone
-        if 'T' in dt_str:
-            # Remove timezone info for simplicity
-            dt_str = dt_str.replace('Z', '+00:00')
-            if '+' in dt_str:
-                dt_str = dt_str.split('+')[0]
-            return datetime.fromisoformat(dt_str)
-        return None
-    except:
-        return None
+        Base.metadata.create_all(engine)
+        with engine.begin() as connection:
+            before = int(connection.scalar(select(func.count()).select_from(Proxy.__table__)) or 0)
+            if replace:
+                connection.execute(Proxy.__table__.delete())
+                before = 0
+
+        processed = 0
+        for batch in _iter_rows(source, copy_columns, batch_size):
+            _insert_ignore(engine, batch)
+            processed += len(batch)
+
+        with engine.connect() as connection:
+            after = int(connection.scalar(select(func.count()).select_from(Proxy.__table__)) or 0)
+        return {
+            "source_rows": source_total,
+            "processed_rows": processed,
+            "target_before": before,
+            "target_after": after,
+            "inserted_rows": max(0, after - before),
+            "skipped_rows": max(0, processed - max(0, after - before)),
+            "copied_columns": copy_columns,
+        }
+    finally:
+        engine.dispose()
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--source",
+        type=Path,
+        default=Path(os.environ.get("SQLITE_DB_PATH", "proxies.db")),
+        help="Source SQLite database",
+    )
+    parser.add_argument(
+        "--target-url",
+        default=os.environ.get("MIGRATION_TARGET_URL", ""),
+        help="Target SQLAlchemy URL; MIGRATION_TARGET_URL is also supported",
+    )
+    parser.add_argument("--batch-size", type=int, default=1000)
+    parser.add_argument("--execute", action="store_true", help="Perform the migration")
+    parser.add_argument("--replace", action="store_true", help="Delete target proxy rows first")
+    parser.add_argument(
+        "--yes-replace",
+        action="store_true",
+        help="Required confirmation for --replace",
+    )
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    if not 1 <= args.batch_size <= 10000:
+        print("--batch-size must be between 1 and 10000", file=sys.stderr)
+        return 2
+    if not args.target_url:
+        print("--target-url or MIGRATION_TARGET_URL is required", file=sys.stderr)
+        return 2
+    if args.replace and not args.yes_replace:
+        print("--replace requires --yes-replace", file=sys.stderr)
+        return 2
+
+    try:
+        source_total, source_columns = inspect_source(args.source)
+        if _target_matches_source(args.source, args.target_url):
+            raise ValueError("Source and target databases must be different files")
+        plan = {
+            "mode": "execute" if args.execute else "dry-run",
+            "source": str(args.source.resolve()),
+            "source_rows": source_total,
+            "source_columns": source_columns,
+            "target": _redacted_url(args.target_url),
+            "replace": bool(args.replace),
+            "batch_size": args.batch_size,
+        }
+        if not args.execute:
+            print(json.dumps(plan, indent=2, sort_keys=True))
+            print("Dry-run only. Re-run with --execute to write to the target database.")
+            return 0
+
+        result = migrate(
+            source=args.source,
+            target_url=args.target_url,
+            batch_size=args.batch_size,
+            replace=args.replace,
+        )
+        print(json.dumps({**plan, **result}, indent=2, sort_keys=True))
+        return 0
+    except (FileNotFoundError, ValueError, sqlite3.DatabaseError) as exc:
+        print(f"Migration validation failed: {exc}", file=sys.stderr)
+        return 3
+    except Exception as exc:
+        print(f"Migration failed: {exc}", file=sys.stderr)
+        return 4
+
 
 if __name__ == "__main__":
-    # Check if we should add tqdm
-    try:
-        from tqdm import tqdm
-    except ImportError:
-        print("[!] Installing tqdm for progress bar...")
-        import subprocess
-        subprocess.run(["pip", "install", "tqdm"], check=True)
-        from tqdm import tqdm
-    
-    migrate_sqlite_to_mysql()
+    raise SystemExit(main())

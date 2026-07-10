@@ -50,6 +50,8 @@ proxies_backup_*.sqlite
 proxies_backup_*.sql
 proxies_backup_before_import_*.sqlite
 
+backups/
+
 # Generated archives / overlays
 *.zip
 *.tar

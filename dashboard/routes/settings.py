@@ -12,45 +12,17 @@ from flask import Blueprint, current_app, request, jsonify, send_file, g, sessio
 from dashboard.decorators import login_required, require_permission
 from dashboard.security import api_error
 from dashboard.config import USERS
+from backup_utils import (
+    create_sqlite_backup,
+    replace_sqlite_database,
+    reserve_private_file,
+    stage_sqlite_copy,
+    validate_sqlite_database,
+)
 
 settings_bp = Blueprint('settings', __name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-def _sqlite_backup(source_path, destination_path):
-    """Create a transactionally consistent SQLite backup."""
-    source = sqlite3.connect(f"file:{source_path}?mode=ro", uri=True)
-    destination = sqlite3.connect(destination_path)
-    try:
-        with destination:
-            source.backup(destination)
-    finally:
-        destination.close()
-        source.close()
-
-
-def _validate_sqlite_backup(path):
-    if os.path.getsize(path) < 100 or os.path.getsize(path) > 512 * 1024 * 1024:
-        raise ValueError("SQLite backup size is invalid")
-    with open(path, "rb") as handle:
-        if handle.read(16) != b"SQLite format 3\x00":
-            raise ValueError("Uploaded file is not a SQLite database")
-    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    try:
-        integrity = connection.execute("PRAGMA integrity_check").fetchone()
-        if not integrity or integrity[0] != "ok":
-            raise ValueError("SQLite backup failed integrity validation")
-        tables = {
-            row[0]
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
-        if "proxies" not in tables:
-            raise ValueError("SQLite backup does not contain the proxies table")
-    finally:
-        connection.close()
 
 
 def _read_json_object(path):
@@ -335,8 +307,6 @@ def api_settings_backup():
     from config import config
 
     db_type = config.DB_TYPE.lower()
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
     try:
         if db_type == 'sqlite':
             sqlite_path = config.SQLITE_DB_PATH
@@ -344,26 +314,33 @@ def api_settings_backup():
                 sqlite_path = os.path.join(BASE_DIR, sqlite_path)
             if not os.path.exists(sqlite_path):
                 return api_error("SQLite database file was not found", 404, "not_found")
-            backup_name = os.path.join(BASE_DIR, f"proxies_backup_{timestamp}.sqlite")
-            _sqlite_backup(sqlite_path, backup_name)
+            backup_path = create_sqlite_backup(sqlite_path, directory=BASE_DIR)
         else:
             db_name = os.getenv('DB_NAME', 'proxypool')
             db_user = os.getenv('DB_USER', 'proxypool')
             db_pass = os.getenv('DB_PASS', '')
             db_host = os.getenv('DB_HOST', 'localhost')
-            backup_name = os.path.join(BASE_DIR, f"proxies_backup_{timestamp}.sql")
+            backup_path, backup_fd = reserve_private_file(
+                BASE_DIR,
+                prefix="proxies_backup",
+                suffix=".sql",
+            )
             cmd = ['mysqldump', f'-h{db_host}', f'-u{db_user}', db_name]
             env = os.environ.copy()
             if db_pass:
                 # Avoid leaking the DB password via process argv (`ps`).
                 env['MYSQL_PWD'] = db_pass
-            with open(backup_name, 'w') as f:
-                subprocess.run(cmd, stdout=f, check=True, env=env)
+            try:
+                with os.fdopen(backup_fd, 'w', encoding='utf-8') as output:
+                    subprocess.run(cmd, stdout=output, check=True, env=env)
+            except Exception:
+                backup_path.unlink(missing_ok=True)
+                raise
 
         return jsonify({
             "success": True,
-            "file": os.path.basename(backup_name),
-            "size_mb": os.path.getsize(backup_name) / 1024 / 1024
+            "file": backup_path.name,
+            "size_mb": backup_path.stat().st_size / 1024 / 1024
         })
     except subprocess.CalledProcessError:
         current_app.logger.exception("Database backup command failed")
@@ -440,27 +417,53 @@ def api_settings_import():
             sqlite_path = config.SQLITE_DB_PATH
             if not os.path.isabs(sqlite_path):
                 sqlite_path = os.path.join(BASE_DIR, sqlite_path)
-            backup_name = os.path.join(BASE_DIR, f"proxies_backup_before_import_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sqlite")
-            staged_path = None
-            with tempfile.NamedTemporaryFile(dir=BASE_DIR, suffix=".sqlite", delete=False) as staged:
-                staged_path = staged.name
+            upload_path = None
+            replacement_path = None
+            previous_backup = None
+            with tempfile.NamedTemporaryFile(dir=BASE_DIR, suffix=".sqlite", delete=False) as upload:
+                upload_path = upload.name
             try:
-                file.save(staged_path)
-                _validate_sqlite_backup(staged_path)
+                file.save(upload_path)
+                validate_sqlite_database(upload_path)
                 if os.path.exists(sqlite_path):
-                    _sqlite_backup(sqlite_path, backup_name)
+                    previous_backup = create_sqlite_backup(
+                        sqlite_path,
+                        directory=BASE_DIR,
+                        prefix="proxies_backup_before_import",
+                    )
+                replacement_path = stage_sqlite_copy(
+                    upload_path,
+                    destination_directory=os.path.dirname(sqlite_path) or BASE_DIR,
+                )
                 from database import db, ensure_db_schema
                 if getattr(db, "Session", None) is not None:
                     db.Session.remove()
                 if getattr(db, "engine", None) is not None:
                     db.engine.dispose()
-                os.replace(staged_path, sqlite_path)
-                staged_path = None
-                ensure_db_schema()
+                replace_sqlite_database(replacement_path, sqlite_path)
+                replacement_path = None
+                try:
+                    ensure_db_schema()
+                except Exception:
+                    current_app.logger.exception("Restored SQLite database failed schema initialization; rolling back")
+                    if previous_backup is not None:
+                        rollback_path = stage_sqlite_copy(
+                            previous_backup,
+                            destination_directory=os.path.dirname(sqlite_path) or BASE_DIR,
+                        )
+                        replace_sqlite_database(rollback_path, sqlite_path)
+                        ensure_db_schema()
+                    raise
             finally:
-                if staged_path and os.path.exists(staged_path):
-                    os.unlink(staged_path)
-            return jsonify({"success": True, "mode": mode, "backup": os.path.basename(backup_name)})
+                if upload_path and os.path.exists(upload_path):
+                    os.unlink(upload_path)
+                if replacement_path and os.path.exists(replacement_path):
+                    os.unlink(replacement_path)
+            return jsonify({
+                "success": True,
+                "mode": mode,
+                "backup": previous_backup.name if previous_backup else None,
+            })
 
         if not filename.endswith('.sql'):
             return api_error("MySQL import only accepts .sql files", 400, "invalid_backup")
@@ -473,9 +476,22 @@ def api_settings_import():
         if db_pass:
             env['MYSQL_PWD'] = db_pass
 
-        backup_name = os.path.join(BASE_DIR, f"proxies_backup_before_import_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql")
-        with open(backup_name, 'w') as backup_file:
-            subprocess.run(['mysqldump', f'-h{db_host}', f'-u{db_user}', db_name], stdout=backup_file, check=True, env=env)
+        backup_path, backup_fd = reserve_private_file(
+            BASE_DIR,
+            prefix="proxies_backup_before_import",
+            suffix=".sql",
+        )
+        try:
+            with os.fdopen(backup_fd, 'w', encoding='utf-8') as backup_file:
+                subprocess.run(
+                    ['mysqldump', f'-h{db_host}', f'-u{db_user}', db_name],
+                    stdout=backup_file,
+                    check=True,
+                    env=env,
+                )
+        except Exception:
+            backup_path.unlink(missing_ok=True)
+            raise
 
         if mode == "replace":
             subprocess.run([
@@ -505,7 +521,7 @@ def api_settings_import():
             except OSError:
                 pass
 
-        return jsonify({"success": True, "mode": mode, "backup": os.path.basename(backup_name)})
+        return jsonify({"success": True, "mode": mode, "backup": backup_path.name})
 
     except (ValueError, sqlite3.DatabaseError) as exc:
         return api_error(str(exc), 400, "invalid_backup")

@@ -200,3 +200,15 @@ The cleanup removes the retired UI compatibility stylesheet and normalizes execu
 ## Local runtime hardening
 
 The development dashboard binds to `127.0.0.1:5003` by default. Configure `DASHBOARD_HOST`, `DASHBOARD_PORT`, and the explicit `DASHBOARD_ALLOW_PUBLIC` override in `.env` when needed. Rotate exposed local secrets without printing them by running `python3 scripts/rotate_local_secrets.py`. See `docs/LOCAL_RUNTIME.md`.
+## Release readiness and data portability
+
+Run the non-deploying release-candidate verification with:
+
+```bash
+bash scripts/release_check.sh
+```
+
+SQLite backups are collision-safe, validated, and created with mode `0600` via
+`scripts/sqlite_backup.py`. The migration CLI is dry-run by default and copies
+all current Proxy columns while skipping existing identities. See
+[`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md).

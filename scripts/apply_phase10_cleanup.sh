@@ -7,7 +7,7 @@ rm -f dashboard/static/css/compat.css
 
 is_entrypoint() {
   case "$1" in
-    scripts/*.sh|scripts/create_admin.py|dashboard/app.py|proxy_importer/app.py|proxy_monitor/app.py|proxy_server/app.py|migrate.py)
+    scripts/*.sh|scripts/*.py|dashboard/app.py|proxy_importer/app.py|proxy_monitor/app.py|proxy_server/app.py|migrate.py)
       return 0 ;;
     *) return 1 ;;
   esac
@@ -27,7 +27,7 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 else
   find . -type f -not -path './.git/*' -exec chmod 0644 {} +
   find scripts -maxdepth 1 -type f -name '*.sh' -exec chmod 0755 {} +
-  chmod 0755 scripts/create_admin.py dashboard/app.py proxy_importer/app.py proxy_monitor/app.py proxy_server/app.py migrate.py
+  chmod 0755 scripts/*.py dashboard/app.py proxy_importer/app.py proxy_monitor/app.py proxy_server/app.py migrate.py
 fi
 
 echo "[OK] Removed the compatibility stylesheet and normalized executable modes."
