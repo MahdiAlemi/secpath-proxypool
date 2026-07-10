@@ -367,3 +367,29 @@ git status --short
 ```
 
 For a local visual review, start the development dashboard and open `http://127.0.0.1:5003/index?tab=monitor`. Verify profile search/state filtering, selected-profile details, candidate preview, Start/Pause/Resume/Stop controls, recent results, logs, dark mode, and a narrow viewport. This is a local review only; do not deploy or restart production services.
+
+## 18. Phase 8 Serving Center verification
+
+After applying the Serving overlay:
+
+```bash
+bash scripts/health_check.sh
+bash scripts/repo_hygiene_check.sh
+python3 -m compileall -q dashboard tests
+node --check dashboard/static/js/base.js
+node --check dashboard/static/js/serving.js
+node --check dashboard/static/js/shell.js
+python3 -m unittest -v tests.test_serving_ui
+git diff --check
+git status --short
+```
+
+The dedicated tests use a disposable SQLite database. They verify the modular Serving assets, credential-redacted detail responses, scoped candidate preflight, bounded log access, strict status/protocol validation, profile metadata normalization, and edit preview with preserved hidden credentials.
+
+For a local visual review only:
+
+```bash
+bash scripts/run_dashboard.sh
+```
+
+Open `http://127.0.0.1:5003/index?tab=server`. Check profile search and filtering, endpoint copy, preflight refresh, runtime logs, Start/Stop, the four editor presets, protected network-listener warnings, dark mode, and a narrow viewport. Do not expose a listener publicly during visual review. Applying the overlay does not start, restart, or deploy any service.

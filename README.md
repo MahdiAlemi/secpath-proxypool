@@ -176,3 +176,7 @@ Proxy ingestion now uses a preflight-first workspace for manual batches, public 
 ## Validation workspace
 
 Validation profiles now use a dedicated, responsive workspace with searchable runtime states, live progress, recent credential-redacted outcomes, log inspection, and a non-mutating candidate preview before save. The monitor lifecycle remains process-safe and resumable. See [`docs/VALIDATION_UI.md`](docs/VALIDATION_UI.md).
+
+## Serving workspace
+
+Server profiles now use a dedicated Serving Center with searchable runtime state, credential-redacted profile details, copyable client endpoints, bounded log inspection, capability-aware candidate preflight, and a responsive profile editor. Listener security and process ownership remain enforced by the backend. See [`docs/SERVING_UI.md`](docs/SERVING_UI.md).

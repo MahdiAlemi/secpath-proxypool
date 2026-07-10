@@ -344,267 +344,126 @@
   </div>
 </div>
 
-<!-- SERVER SETTINGS MODAL -->
-<div id="modal-server-settings" class="modal">
-  <div class="modal-content" style="max-width:600px;max-height:80vh;overflow:auto">
-    <div class="modal-header">
-      <div class="modal-title">Server Settings</div>
-      <button class="modal-close" onclick="closeModal('modal-server-settings')">&times;</button>
-    </div>
-    <div id="server-settings-content" style="margin-bottom:16px"></div>
-    <div style="display:flex;gap:12px">
-      <button class="btn btn-primary" onclick="editServerSettings()">Edit & Restart</button>
-      <button class="btn" onclick="closeModal('modal-server-settings')">Close</button>
-    </div>
-  </div>
-</div>
-
-<!-- ADD SERVER MODAL -->
-<div id="modal-add-server" class="modal">
-  <div class="modal-content" style="max-width:700px;max-height:85vh;overflow:auto">
-    <div class="modal-header">
-      <div class="modal-title">Add New Server</div>
-      <button class="modal-close" onclick="closeModal('modal-add-server')">&times;</button>
-    </div>
-
-    <div class="server-wizard-steps" id="server-wizard-steps">
-      <button class="server-wizard-step active" type="button" onclick="setServerWizardStep(0)"><span>1</span><strong>Use case</strong><small>Preset & listener</small></button>
-      <button class="server-wizard-step" type="button" onclick="setServerWizardStep(1)"><span>2</span><strong>Routing</strong><small>Rotation & auth</small></button>
-      <button class="server-wizard-step" type="button" onclick="setServerWizardStep(2)"><span>3</span><strong>Filters</strong><small>Geo & network</small></button>
-      <button class="server-wizard-step" type="button" onclick="setServerWizardStep(3)"><span>4</span><strong>Review</strong><small>Preflight</small></button>
-    </div>
-
-    <div id="server-wizard-review" class="server-wizard-review" style="display:none">
-      <div class="review-header">
-        <div><strong>Profile review</strong><span>Check the generated profile and candidate pool before creating it.</span></div>
-        <button class="btn btn-sm" type="button" onclick="refreshServerCandidatePreview()">Refresh Preflight</button>
+<!-- SERVER PROFILE EDITOR -->
+<div id="modal-add-server" class="modal" role="dialog" aria-modal="true" aria-labelledby="serving-editor-title">
+  <div class="modal-content serving-editor-modal">
+    <div class="modal-header serving-editor-header">
+      <div>
+        <div class="modal-title" id="serving-editor-title">Create server profile</div>
+        <div class="section-hint" id="serving-editor-subtitle">Define the listener, candidate pool, and route policy before starting traffic.</div>
       </div>
-      <div id="server-review-grid" class="server-review-grid"></div>
-      <div id="server-preview-result" class="server-preview-result"></div>
+      <button class="modal-close" type="button" onclick="closeModal('modal-add-server')" aria-label="Close server editor">&times;</button>
     </div>
 
-    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
-      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Basic Settings</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
-        <div class="form-group">
-          <label class="form-label">Protocol</label>
-          <select id="server-proto" class="form-input">
-            <option value="http">HTTP</option>
-            <option value="https">HTTPS</option>
-            <option value="socks4">SOCKS4</option>
-            <option value="socks5">SOCKS5</option>
-          </select>
+    <div class="serving-editor-layout">
+      <form id="serving-profile-form" class="serving-editor-form" autocomplete="off">
+        <fieldset class="serving-form-section">
+          <legend>Choose a route preset</legend>
+          <div class="serving-preset-grid" id="serving-preset-grid">
+            <button class="serving-preset" type="button" data-preset="web" aria-pressed="true"><strong>Web browsing</strong><span>Verified HTTPS exits</span></button>
+            <button class="serving-preset" type="button" data-preset="telegram" aria-pressed="false"><strong>Telegram</strong><span>HTTPS + DNS + TG</span></button>
+            <button class="serving-preset" type="button" data-preset="scraping" aria-pressed="false"><strong>HTTP scraping</strong><span>Lower capability floor</span></button>
+            <button class="serving-preset" type="button" data-preset="custom" aria-pressed="false"><strong>Custom</strong><span>Manual policy</span></button>
+          </div>
+          <input id="server-use-case" type="hidden" value="web">
+          <div class="serving-form-grid">
+            <div class="form-group serving-form-span"><label class="form-label" for="server-name">Profile name</label><input class="form-input" id="server-name" maxlength="80" placeholder="Web route — local"></div>
+            <div class="form-group"><label class="form-label" for="server-proto">Listener protocol</label><select class="form-input" id="server-proto"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks4">SOCKS4</option><option value="socks5">SOCKS5</option></select></div>
+            <div class="form-group"><label class="form-label" for="server-bind">Bind address</label><input class="form-input" id="server-bind" value="127.0.0.1" spellcheck="false"><small class="form-help" id="server-bind-help">Loopback is safest for local clients.</small></div>
+            <div class="form-group"><label class="form-label" for="server-port">Port</label><input class="form-input" id="server-port" type="number" min="1" max="65535" value="8080"></div>
+            <div class="form-group"><label class="form-label" for="server-threads">Connection workers</label><input class="form-input" id="server-threads" type="number" min="1" max="1000" value="100"></div>
+          </div>
+        </fieldset>
+
+        <fieldset class="serving-form-section">
+          <legend>Client access</legend>
+          <div class="serving-form-grid three">
+            <div class="form-group"><label class="form-label" for="server-user">Username</label><input class="form-input" id="server-user" maxlength="255" placeholder="Optional"></div>
+            <div class="form-group"><label class="form-label" for="server-pass">Password</label><input class="form-input" id="server-pass" type="password" maxlength="255" placeholder="Optional"></div>
+            <div class="form-group"><label class="form-label" for="server-auth-required">Upstream auth filter</label><select class="form-input" id="server-auth-required"><option value="">Any upstream</option><option value="auth">Authenticated only</option><option value="no_auth">No-auth only</option></select></div>
+          </div>
+          <label class="serving-inline-check"><input id="server-allow-public-no-auth" type="checkbox"> <span>Explicitly allow a non-loopback listener without client authentication. This can expose an open proxy.</span></label>
+          <label class="serving-inline-check" id="server-clear-credentials-row" hidden><input id="server-clear-credentials" type="checkbox"> <span>Remove the credentials already stored for this profile.</span></label>
+          <p class="form-help" id="server-credential-help"></p>
+        </fieldset>
+
+        <fieldset class="serving-form-section">
+          <legend>Candidate pool</legend>
+          <div class="form-group"><label class="form-label">Candidate statuses</label><div class="serving-choice-grid" id="server-status-choices">
+            <label class="serving-choice"><input type="checkbox" value="alive" checked><span>Alive</span></label>
+            <label class="serving-choice"><input type="checkbox" value="soft"><span>Soft</span></label>
+            <label class="serving-choice"><input type="checkbox" value="flaky"><span>Flaky</span></label>
+            <label class="serving-choice"><input type="checkbox" value="cooling"><span>Cooling</span></label>
+            <label class="serving-choice"><input type="checkbox" value="untested"><span>Untested</span></label>
+            <label class="serving-choice"><input type="checkbox" value="dead"><span>Dead</span></label>
+          </div></div>
+          <div class="form-group"><label class="form-label">Allowed upstream protocols</label><div class="serving-choice-grid" id="server-upstream-protocol-choices">
+            <label class="serving-choice"><input type="checkbox" value="http" checked><span>HTTP</span></label>
+            <label class="serving-choice"><input type="checkbox" value="https" checked><span>HTTPS</span></label>
+            <label class="serving-choice"><input type="checkbox" value="socks4" checked><span>SOCKS4</span></label>
+            <label class="serving-choice"><input type="checkbox" value="socks5" checked><span>SOCKS5</span></label>
+          </div></div>
+          <div class="serving-choice-grid" id="server-capability-choices">
+            <label class="serving-choice"><input id="server-require-web-https" type="checkbox" checked><span>HTTPS verified</span></label>
+            <label class="serving-choice"><input id="server-require-remote-dns" type="checkbox"><span>Remote DNS</span></label>
+            <label class="serving-choice"><input id="server-require-telegram" type="checkbox"><span>Telegram ready</span></label>
+          </div>
+        </fieldset>
+
+        <fieldset class="serving-form-section">
+          <legend>Rotation policy</legend>
+          <div class="serving-form-grid three">
+            <div class="form-group"><label class="form-label" for="server-rotate">Mode</label><select class="form-input" id="server-rotate"><option value="better_cost">Better cost</option><option value="per_connection">Per connection</option><option value="time">Timed rotation</option><option value="sticky">Sticky client</option><option value="fixed">Fixed upstream</option></select></div>
+            <div class="form-group"><label class="form-label" for="server-rotate-interval">Interval (seconds)</label><input class="form-input" id="server-rotate-interval" type="number" min="1" max="86400" value="60"></div>
+            <div class="form-group"><label class="form-label" for="server-timeout">Connect timeout</label><input class="form-input" id="server-timeout" type="number" min="1" max="300" step="0.5" value="10"></div>
+            <div class="form-group"><label class="form-label" for="server-min-cost">Minimum cost</label><input class="form-input" id="server-min-cost" type="number" min="0" step="0.1" value="0"></div>
+            <div class="form-group"><label class="form-label" for="server-cost">Cost ceiling</label><input class="form-input" id="server-cost" type="number" min="0" step="0.1" placeholder="No ceiling"></div>
+            <div class="form-group"><label class="form-label" for="server-sticky-upstream">Pinned upstream</label><input class="form-input" id="server-sticky-upstream" placeholder="id:123 or host:port"></div>
+          </div>
+        </fieldset>
+
+        <details class="serving-advanced">
+          <summary>Advanced filters and transport settings</summary>
+          <div class="serving-form-grid three">
+            <div class="form-group"><label class="form-label" for="server-country">Countries</label><input class="form-input" id="server-country" placeholder="US,DE,NL"></div>
+            <div class="form-group"><label class="form-label" for="server-regions">Regions</label><input class="form-input" id="server-regions"></div>
+            <div class="form-group"><label class="form-label" for="server-cities">Cities</label><input class="form-input" id="server-cities"></div>
+            <div class="form-group"><label class="form-label" for="server-orgs">Organizations</label><input class="form-input" id="server-orgs"></div>
+            <div class="form-group"><label class="form-label" for="server-isp">ISP</label><input class="form-input" id="server-isp"></div>
+            <div class="form-group"><label class="form-label" for="server-asn">ASN</label><input class="form-input" id="server-asn"></div>
+            <div class="form-group"><label class="form-label" for="server-continent">Continents</label><input class="form-input" id="server-continent" placeholder="EU,NA"></div>
+            <div class="form-group"><label class="form-label" for="server-zip">ZIP codes</label><input class="form-input" id="server-zip"></div>
+            <div class="form-group"><label class="form-label" for="server-timezones">Timezones</label><input class="form-input" id="server-timezones"></div>
+            <div class="form-group"><label class="form-label" for="server-mobile">Mobile network</label><select class="form-input" id="server-mobile"><option value="">Any</option><option value="true">Required</option><option value="false">Excluded</option></select></div>
+            <div class="form-group"><label class="form-label" for="server-proxy">Datacenter proxy flag</label><select class="form-input" id="server-proxy"><option value="">Any</option><option value="true">Required</option><option value="false">Excluded</option></select></div>
+            <div class="form-group"><label class="form-label" for="server-hosting">Hosting network</label><select class="form-input" id="server-hosting"><option value="">Any</option><option value="true">Required</option><option value="false">Excluded</option></select></div>
+            <div class="form-group"><label class="form-label" for="server-header-limit">Header limit (bytes)</label><input class="form-input" id="server-header-limit" type="number" min="4096" max="1048576" value="65536"></div>
+            <div class="form-group"><label class="form-label" for="server-certfile">TLS certificate</label><input class="form-input" id="server-certfile" placeholder="/path/to/cert.pem"></div>
+            <div class="form-group"><label class="form-label" for="server-keyfile">TLS private key</label><input class="form-input" id="server-keyfile" placeholder="/path/to/key.pem"></div>
+          </div>
+          <div class="serving-choice-grid">
+            <label class="serving-choice"><input id="server-insecure-upstream" type="checkbox"><span>Skip upstream TLS verification</span></label>
+            <label class="serving-choice"><input id="server-readonly" type="checkbox"><span>Do not update proxy runtime stats</span></label>
+          </div>
+        </details>
+      </form>
+
+      <aside class="serving-editor-preview" aria-live="polite">
+        <div class="serving-preview-heading"><div><strong>Candidate preflight</strong><span>Uses the same scope and filters as runtime selection.</span></div><span class="serving-preview-status" id="serving-preview-status">Waiting</span></div>
+        <div class="serving-preview-metrics">
+          <div><span>Matching</span><strong id="serving-preview-total">—</strong></div>
+          <div><span>Listener</span><strong id="serving-preview-listener">—</strong></div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Bind Address</label>
-          <input type="text" id="server-bind" class="form-input" value="127.0.0.1">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Port</label>
-          <input type="number" id="server-port" class="form-input" value="8080">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Rotate Mode</label>
-          <select id="server-rotate" class="form-input">
-            <option value="fixed">Fixed</option>
-            <option value="per_connection">Per Connection</option>
-            <option value="better_cost" selected>Better Cost</option>
-            <option value="time">Time</option>
-            <option value="sticky">Sticky</option>
-          </select>
-        </div>
-      </div>
+        <div class="serving-preview-block"><strong>Protocol mix</strong><div id="serving-preview-protocols" class="serving-chip-list"><span class="serving-chip">No preview</span></div></div>
+        <div class="serving-preview-block"><strong>Status mix</strong><div id="serving-preview-statuses" class="serving-chip-list"><span class="serving-chip">No preview</span></div></div>
+        <div class="serving-preview-block"><strong>Warnings</strong><div id="serving-preview-warnings"><div class="serving-preview-ok">Change a field to run preflight.</div></div></div>
+        <div class="serving-preview-block"><strong>Candidate samples</strong><div id="serving-preview-samples" class="serving-candidate-samples"><span>No candidates loaded.</span></div></div>
+      </aside>
     </div>
 
-    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
-      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Rotation Settings</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
-        <div class="form-group">
-          <label class="form-label">Rotate Interval</label>
-          <input type="number" id="server-rotate-interval" class="form-input" value="60">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Min Cost</label>
-          <input type="number" id="server-min-cost" class="form-input" value="0.0" step="0.1">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Cost Threshold</label>
-          <input type="number" id="server-cost" class="form-input" value="" placeholder="Optional" step="0.1">
-        </div>
-      </div>
-    </div>
-
-    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
-      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Authentication</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-        <div class="form-group">
-          <label class="form-label">Upstream Auth</label>
-          <select id="server-auth-required" class="form-input">
-            <option value="">Any</option>
-            <option value="auth">With Auth</option>
-            <option value="no_auth">No Auth</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Username</label>
-          <input type="text" id="server-user" class="form-input" placeholder="Client username">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <input type="password" id="server-pass" class="form-input" placeholder="Client password">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Public no-auth</label>
-          <select id="server-allow-public-no-auth" class="form-input">
-            <option value="false" selected>Blocked (recommended)</option>
-            <option value="true">Allow explicitly</option>
-          </select>
-        </div>
-      </div>
-    </div>
-
-    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
-      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">TLS/SSL (for HTTPS)</div>
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
-        <div class="form-group">
-          <label class="form-label">Cert File (PEM)</label>
-          <input type="text" id="server-certfile" class="form-input" placeholder="/path/to/cert.pem">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Key File (PEM)</label>
-          <input type="text" id="server-keyfile" class="form-input" placeholder="/path/to/key.pem">
-        </div>
-      </div>
-    </div>
-
-    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
-      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Upstream Proxy</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-        <div class="form-group">
-          <label class="form-label">Sticky Upstream</label>
-          <input type="text" id="server-sticky-upstream" class="form-input" placeholder="socks5://user:pass@ip:port">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Upstream Protocol</label>
-          <input type="text" id="server-upstream-proto" class="form-input" placeholder="http,https,socks5">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Insecure Upstream</label>
-          <select id="server-insecure-upstream" class="form-input">
-            <option value="false">No</option>
-            <option value="true">Yes</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Use Case Preset</label>
-          <select id="server-use-case" class="form-input" onchange="applyServerUseCase(this.value)">
-            <option value="custom">Custom (manual)</option>
-            <option value="web" selected>Web Browsing (HTTPS)</option>
-            <option value="telegram">Telegram (HTTPS+DNS+TG)</option>
-            <option value="scraping">Scraping / HTTP</option>
-          </select>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px">Presets set the Require flags below automatically.</div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Candidate Statuses</label>
-          <input type="text" id="server-candidate-statuses" class="form-input" value="alive" placeholder="alive or alive,soft">
-          <div style="font-size:11px;color:var(--muted);margin-top:4px">Production default: alive. Dev/testing: alive,soft.</div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Require HTTPS OK</label>
-          <select id="server-require-web-https" class="form-input">
-            <option value="false">No</option>
-            <option value="true" selected>Yes</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Require Remote DNS</label>
-          <select id="server-require-remote-dns" class="form-input">
-            <option value="false" selected>No</option>
-            <option value="true">Yes</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Require Telegram OK</label>
-          <select id="server-require-telegram" class="form-input">
-            <option value="false" selected>No</option>
-            <option value="true">Yes</option>
-          </select>
-        </div>
-      </div>
-    </div>
-
-    <div style="background:var(--panel-light);padding:12px;border-radius:8px;margin-bottom:12px">
-      <div style="font-weight:700;margin-bottom:12px;color:var(--accent)">Proxy Filters</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-        <div class="form-group">
-          <label class="form-label">Country Codes</label>
-          <input type="text" id="server-country" class="form-input" placeholder="US,GB,DE">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Regions</label>
-          <input type="text" id="server-regions" class="form-input" placeholder="California,Texas">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Cities</label>
-          <input type="text" id="server-cities" class="form-input" placeholder="Los Angeles,New York">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Organizations</label>
-          <input type="text" id="server-orgs" class="form-input" placeholder="Org name">
-        </div>
-        <div class="form-group">
-          <label class="form-label">ISP</label>
-          <input type="text" id="server-isp" class="form-input" placeholder="ISP name">
-        </div>
-        <div class="form-group">
-          <label class="form-label">ASN</label>
-          <input type="text" id="server-asn" class="form-input" placeholder="AS12345">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Continent Code</label>
-          <input type="text" id="server-continent" class="form-input" placeholder="NA,EU">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Zip Codes</label>
-          <input type="text" id="server-zip" class="form-input" placeholder="10001,90001">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Timezones</label>
-          <input type="text" id="server-timezones" class="form-input" placeholder="America/New_York">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Mobile</label>
-          <select id="server-mobile" class="form-input">
-            <option value="">Any</option>
-            <option value="true">Yes</option>
-            <option value="false">No</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Proxy</label>
-          <select id="server-proxy" class="form-input">
-            <option value="">Any</option>
-            <option value="true">Yes</option>
-            <option value="false">No</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Hosting</label>
-          <select id="server-hosting" class="form-input">
-            <option value="">Any</option>
-            <option value="true">Yes</option>
-            <option value="false">No</option>
-          </select>
-        </div>
-      </div>
-    </div>
-
-    <div class="server-wizard-footer">
-      <button class="btn" type="button" id="server-wizard-prev" onclick="serverWizardPrev()">Back</button>
-      <button class="btn btn-primary" type="button" id="server-wizard-next" onclick="serverWizardNext()">Next</button>
-      <button class="btn btn-success" type="button" id="server-wizard-submit" onclick="createServerProfile()" style="display:none">Create Profile</button>
-      <button class="btn" type="button" onclick="closeModal('modal-add-server')">Cancel</button>
+    <div class="serving-editor-footer">
+      <span id="serving-editor-status" role="status"></span>
+      <div><button class="btn" type="button" onclick="closeModal('modal-add-server')">Cancel</button><button class="btn" id="serving-save-button" type="button">Save profile</button><button class="btn btn-primary" id="serving-save-start-button" type="button">Save and start</button></div>
     </div>
   </div>
 </div>

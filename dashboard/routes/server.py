@@ -3,6 +3,7 @@ import subprocess
 import sys
 import ipaddress
 import contextlib
+from pathlib import Path
 
 from flask import Blueprint, request, jsonify
 
@@ -35,6 +36,8 @@ _BOOL_FIELDS = {
 }
 _OPTIONAL_BOOL_TEXT_FIELDS = {"mobile", "proxy", "hosting"}
 _TEXT_FIELDS = {
+    "name",
+    "use_case",
     "auth_required",
     "username",
     "password",
@@ -53,6 +56,9 @@ _TEXT_FIELDS = {
     "zip_codes",
     "timezones",
 }
+
+_VALID_CANDIDATE_STATUSES = {"untested", "alive", "soft", "flaky", "cooling", "revived", "semi-revived", "dead"}
+_VALID_USE_CASES = {"web", "telegram", "scraping", "custom"}
 
 
 def _json_object():
@@ -162,10 +168,45 @@ def _normalize_server_config(data, *, existing=None):
             result[field] = None
             continue
         text = str(value).strip()
-        max_length = 255 if field in {"username", "password"} else 2048
+        if field == "name":
+            max_length = 80
+        elif field == "use_case":
+            max_length = 32
+        elif field in {"username", "password"}:
+            max_length = 255
+        else:
+            max_length = 2048
         if len(text) > max_length or any(ord(char) < 32 for char in text):
             raise ValueError(f"{field} is invalid")
         result[field] = text
+
+    use_case = str(result.get("use_case") or "custom").strip().lower()
+    if use_case not in _VALID_USE_CASES:
+        raise ValueError("use_case is invalid")
+    result["use_case"] = use_case
+    result["name"] = str(result.get("name") or f"{protocol.upper()} :{port}").strip()
+
+    statuses = []
+    for value in str(result.get("candidate_statuses") or "alive").split(","):
+        status = value.strip().lower()
+        if not status:
+            continue
+        if status not in _VALID_CANDIDATE_STATUSES:
+            raise ValueError(f"candidate status is invalid: {status}")
+        if status not in statuses:
+            statuses.append(status)
+    result["candidate_statuses"] = ",".join(statuses or ["alive"])
+
+    upstream_protocols = []
+    for value in str(result.get("upstream_protocol") or "").split(","):
+        upstream = value.strip().lower()
+        if not upstream:
+            continue
+        if upstream not in PROTOCOLS:
+            raise ValueError(f"upstream protocol is invalid: {upstream}")
+        if upstream not in upstream_protocols:
+            upstream_protocols.append(upstream)
+    result["upstream_protocol"] = ",".join(upstream_protocols) or None
 
     if data.get("clear_credentials") is True:
         result["username"] = None
@@ -203,6 +244,94 @@ def _public_server_config(value):
     data.pop("password", None)
     data["has_auth"] = had_credentials
     return data
+
+
+def _candidate_query(session, data):
+    from sqlalchemy import or_
+    from database import Proxy
+
+    query = apply_proxy_scope(session.query(Proxy))
+    statuses = [item for item in str(data.get("candidate_statuses") or "alive").split(",") if item]
+    if statuses:
+        conditions = []
+        for status in statuses:
+            if status == "untested":
+                conditions.append(or_(Proxy.status == "untested", Proxy.status.is_(None)))
+            else:
+                conditions.append(Proxy.status == status)
+        query = query.filter(or_(*conditions))
+
+    if data.get("require_web_https"):
+        query = query.filter(Proxy.web_https_ok.is_(True))
+    if data.get("require_remote_dns"):
+        query = query.filter(Proxy.remote_dns_ok.is_(True))
+    if data.get("require_telegram"):
+        query = query.filter(Proxy.telegram_ok.is_(True))
+
+    protocols = [item for item in str(data.get("upstream_protocol") or "").split(",") if item]
+    if protocols:
+        query = query.filter(Proxy.protocol.in_(protocols))
+
+    text_filters = {
+        "countryCodes": Proxy.countryCode,
+        "regions": Proxy.regionName,
+        "cities": Proxy.city,
+        "orgs": Proxy.org,
+        "isp": Proxy.isp,
+        "asn": Proxy.asn,
+        "continentCode": Proxy.continentCode,
+        "zip_codes": Proxy.zip,
+        "timezones": Proxy.timezone,
+    }
+    for key, column in text_filters.items():
+        values = [item.strip() for item in str(data.get(key) or "").split(",") if item.strip()]
+        if values:
+            query = query.filter(column.in_(values))
+
+    for key, column in {"mobile": Proxy.mobile, "proxy": Proxy.proxy, "hosting": Proxy.hosting}.items():
+        raw = data.get(key)
+        if raw in ("true", "false"):
+            query = query.filter(column == (1 if raw == "true" else 0))
+
+    auth_filter = data.get("auth_required")
+    if auth_filter == "auth":
+        query = query.filter(Proxy.username.is_not(None), Proxy.username != "")
+    elif auth_filter == "no_auth":
+        query = query.filter(or_(Proxy.username.is_(None), Proxy.username == ""))
+
+    return query
+
+
+def _candidate_snapshot(session, data, *, sample_limit=5):
+    from database import Proxy
+
+    query = _candidate_query(session, data)
+    total = query.count()
+    by_protocol = {protocol: query.filter(Proxy.protocol == protocol).count() for protocol in PROTOCOLS}
+    by_status = {}
+    for status in _VALID_CANDIDATE_STATUSES:
+        if status == "untested":
+            from sqlalchemy import or_
+            count = query.filter(or_(Proxy.status == "untested", Proxy.status.is_(None))).count()
+        else:
+            count = query.filter(Proxy.status == status).count()
+        if count:
+            by_status[status] = count
+    samples = [public_proxy_dict(proxy) for proxy in query.order_by(Proxy.cost.asc(), Proxy.id.asc()).limit(sample_limit).all()]
+    return {
+        "total": total,
+        "by_protocol": by_protocol,
+        "by_status": by_status,
+        "samples": samples,
+    }
+
+
+def _server_log_tail(port, *, limit=100):
+    log_file = Path(_project_root()) / f"server_{port}.log"
+    if not log_file.exists() or not log_file.is_file():
+        return []
+    with log_file.open("r", encoding="utf-8", errors="replace") as handle:
+        return handle.readlines()[-limit:]
 
 
 def _project_root():
@@ -247,86 +376,87 @@ def api_server_status():
 
 
 
+@server_bp.route("/api/server/<int:port>", methods=["GET"])
+@login_required
+@require_permission("server.view")
+def api_server_detail(port):
+    from database import db
+
+    port_key = str(port)
+    config = load_servers_config()
+    profile = config.get(port_key)
+    if not profile:
+        return api_error(f"No server profile on port {port_key}", 404, "not_found")
+
+    saved = profile.get("config", {})
+    try:
+        normalized = _normalize_server_config(saved, existing=saved)
+    except ValueError:
+        normalized = dict(saved)
+    status = get_server_status(port_key)
+    with db.session() as session:
+        candidates = _candidate_snapshot(session, normalized, sample_limit=6)
+
+    bind = str(normalized.get("bind") or "127.0.0.1")
+    protocol = str(normalized.get("protocol") or profile.get("protocol") or "http")
+    safe_host = f"[{bind}]" if ":" in bind and not bind.startswith("[") else bind
+    endpoint = f"{protocol}://{safe_host}:{port_key}"
+    return jsonify({
+        "success": True,
+        "port": port_key,
+        "running": bool(status.get("running")),
+        "pid": status.get("pid"),
+        "process_create_time": status.get("process_create_time"),
+        "protocol": protocol,
+        "config": _public_server_config(normalized),
+        "endpoint": {
+            "uri": endpoint,
+            "host": bind,
+            "port": port,
+            "scope": "local" if _is_local_bind(bind) else "network",
+            "has_auth": bool(normalized.get("username") or normalized.get("password")),
+        },
+        "candidates": candidates,
+        "log": {"lines": _server_log_tail(port_key, limit=80)},
+    })
+
+
 @server_bp.route("/api/server/preview-candidates", methods=["POST"])
 @login_required
 @require_permission("server.view")
 def api_server_preview_candidates():
     """Preview how many proxies match a server profile before creating it."""
-    from sqlalchemy import or_
-    from database import db, Proxy
+    from database import db
 
     data = _json_object()
     if data is None:
         return api_error("A JSON object is required", 400, "invalid_json")
     try:
-        data = _normalize_server_config(data)
+        existing = None
+        existing_port = data.get("existing_port")
+        if existing_port not in (None, ""):
+            existing_key = str(_parse_port(existing_port))
+            existing_profile = load_servers_config().get(existing_key)
+            if not existing_profile:
+                return api_error(f"No server profile on port {existing_key}", 404, "not_found")
+            existing = existing_profile.get("config", {})
+        data = _normalize_server_config(data, existing=existing)
     except ValueError as exc:
         return api_error(str(exc), 400, "invalid_server_config")
     with db.session() as session:
-        query = apply_proxy_scope(session.query(Proxy))
-
-        statuses = [x.strip() for x in str(data.get("candidate_statuses") or "alive").split(',') if x.strip()]
-        if statuses:
-            conditions = []
-            for st in statuses:
-                if st == "untested":
-                    conditions.append(or_(Proxy.status == "untested", Proxy.status.is_(None)))
-                else:
-                    conditions.append(Proxy.status == st)
-            query = query.filter(or_(*conditions))
-
-        if data.get("require_web_https"):
-            query = query.filter(Proxy.web_https_ok.is_(True))
-        if data.get("require_remote_dns"):
-            query = query.filter(Proxy.remote_dns_ok.is_(True))
-        if data.get("require_telegram"):
-            query = query.filter(Proxy.telegram_ok.is_(True))
-
-        if data.get("upstream_protocol"):
-            protocols = [p.strip() for p in str(data.get("upstream_protocol")).split(',') if p.strip()]
-            if protocols:
-                query = query.filter(Proxy.protocol.in_(protocols))
-
-        text_filters = {
-            "countryCodes": Proxy.countryCode,
-            "regions": Proxy.regionName,
-            "cities": Proxy.city,
-            "orgs": Proxy.org,
-            "isp": Proxy.isp,
-            "asn": Proxy.asn,
-            "continentCode": Proxy.continentCode,
-            "zip_codes": Proxy.zip,
-            "timezones": Proxy.timezone,
-        }
-        for key, col in text_filters.items():
-            raw = data.get(key)
-            if raw:
-                vals = [v.strip() for v in str(raw).split(',') if v.strip()]
-                if vals:
-                    query = query.filter(col.in_(vals))
-
-        bool_filters = {"mobile": Proxy.mobile, "proxy": Proxy.proxy, "hosting": Proxy.hosting}
-        for key, col in bool_filters.items():
-            raw = data.get(key)
-            if raw in ("true", "false"):
-                query = query.filter(col == (1 if raw == "true" else 0))
-
-        total = query.count()
-        by_protocol = {}
-        for proto in ["http", "https", "socks4", "socks5"]:
-            by_protocol[proto] = query.filter(Proxy.protocol == proto).count()
-
-        samples = [public_proxy_dict(p) for p in query.order_by(Proxy.cost.asc()).limit(5).all()]
+        snapshot = _candidate_snapshot(session, data, sample_limit=6)
 
     warnings = []
-    if total == 0:
+    if snapshot["total"] == 0:
         warnings.append("No proxies match this server profile. Loosen filters or run a monitor first.")
     if data.get("require_telegram") and not data.get("require_remote_dns"):
-        warnings.append("Telegram preset usually needs remote DNS; consider requiring Remote DNS.")
-    if not data.get("require_web_https"):
-        warnings.append("HTTPS is not required. This is OK for HTTP scraping, but not recommended for web browsing.")
+        warnings.append("Telegram routing usually needs remote DNS; enable the Remote DNS requirement.")
+    if not data.get("require_web_https") and data.get("use_case") in {"web", "telegram"}:
+        warnings.append("This preset normally requires verified HTTPS capability.")
+    if not _is_local_bind(data.get("bind")) and not data.get("username") and not data.get("allow_public_no_auth"):
+        warnings.append("A network listener needs authentication or an explicit public no-auth override.")
 
-    return jsonify({"success": True, "total": total, "by_protocol": by_protocol, "samples": samples, "warnings": warnings})
+    return jsonify({"success": True, **snapshot, "warnings": warnings})
 
 
 @server_bp.route("/api/server/create", methods=["POST"])
@@ -517,13 +647,11 @@ def api_server_delete():
 def api_server_log():
     try:
         port = str(_parse_port(request.args.get("port", "8080")))
-    except ValueError as exc:
+        limit = int(request.args.get("limit", 100))
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+    except (TypeError, ValueError) as exc:
         return api_error(str(exc), 400, "invalid_server_config")
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    root_dir = os.path.dirname(os.path.dirname(base_dir))
-    log_file = os.path.join(root_dir, f"server_{port}.log")
-    lines = []
-    if os.path.exists(log_file):
-        with open(log_file, "r") as f:
-            lines = f.readlines()[-100:]
-    return jsonify({"lines": lines, "port": port})
+    if port not in load_servers_config():
+        return api_error(f"No server profile on port {port}", 404, "not_found")
+    return jsonify({"lines": _server_log_tail(port, limit=limit), "port": port})

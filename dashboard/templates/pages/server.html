@@ -1,30 +1,96 @@
-<!-- SERVER TAB -->
-    <div id="tab-server" class="tab-content {{ 'hidden' if tab!='server' else '' }}">
-      <div class="card server-builder-card serving-center-card">
-        <div class="card-header serving-center-header">
-          <div>
-            <div class="card-title">Serving Center <span class="health-pill">Use-case driven</span></div>
-            <div class="section-hint">Create, preflight, and run local proxy server profiles that only use proxies with the capabilities your client actually needs.</div>
-          </div>
-          <button class="btn btn-primary btn-sm" onclick="showAddServerForm()">+ Add New Server Profile</button>
-        </div>
-        <div class="server-serving-overview">
-          <div class="server-kpi"><span>Profiles</span><strong id="server-kpi-total">0</strong><small>configured listeners</small></div>
-          <div class="server-kpi"><span>Running</span><strong id="server-kpi-running">0</strong><small>active local servers</small></div>
-          <div class="server-kpi"><span>HTTPS-required</span><strong id="server-kpi-https">0</strong><small>web-safe profiles</small></div>
-          <div class="server-kpi"><span>Telegram-ready</span><strong id="server-kpi-telegram">0</strong><small>strict TG profiles</small></div>
-        </div>
-        <div class="serving-guidance">
-          <div><strong>Serving checklist</strong><span>Pick a use-case preset, run preflight, create the profile, then start only when matching candidates exist.</span></div>
-          <div id="server-runtime-summary">Waiting for server snapshot...</div>
-        </div>
-        <div class="server-preset-strip serving-preset-strip">
-          <div><strong>Web Browsing</strong><span>Requires HTTPS-ready exits.</span></div>
-          <div><strong>Telegram</strong><span>Requires HTTPS + remote DNS + Telegram reachability.</span></div>
-          <div><strong>Scraping / HTTP</strong><span>Allows simpler HTTP-only routes.</span></div>
-        </div>
-        <div id="servers-list" class="servers-grid">
-          <div class="servers-empty serving-empty-state"><strong>No server profiles yet.</strong><span>Create a profile from a preset, run preflight, then start serving when candidates are available.</span><button class="btn btn-primary btn-sm" onclick="showAddServerForm()">Create server profile</button></div>
-        </div>
-      </div>
+<!-- SERVING CENTER -->
+<section id="tab-server" class="tab-content {{ 'hidden' if tab!='server' else '' }} serving-page" aria-labelledby="serving-page-title">
+  <div class="serving-page-header">
+    <div>
+      <span class="page-kicker">Traffic delivery</span>
+      <h2 id="serving-page-title">Serving Center</h2>
+      <p>Build controlled local routes from validated proxy pools, then operate each listener from one focused workspace.</p>
     </div>
+    <button class="btn btn-primary" id="serving-create-button" type="button" onclick="showAddServerForm()">New server</button>
+  </div>
+
+  <div class="serving-metrics" aria-label="Serving summary">
+    <article><span>Profiles</span><strong id="serving-metric-profiles">0</strong><small>configured listeners</small></article>
+    <article><span>Running</span><strong id="serving-metric-running">0</strong><small>active processes</small></article>
+    <article><span>Protected</span><strong id="serving-metric-protected">0</strong><small>local or authenticated</small></article>
+    <article><span>Candidate routes</span><strong id="serving-metric-candidates">0</strong><small>for selected profile</small></article>
+  </div>
+
+  <div class="serving-workspace">
+    <aside class="serving-profile-panel" aria-label="Server profiles">
+      <div class="serving-panel-heading">
+        <div><strong>Server profiles</strong><span id="serving-profile-caption">Latest runtime snapshot</span></div>
+        <span id="serving-profile-count">0 profiles</span>
+      </div>
+      <div class="serving-list-controls">
+        <label class="serving-search"><span class="sr-only">Search server profiles</span><input id="serving-search" type="search" placeholder="Search name, port, protocol"></label>
+        <select id="serving-state-filter" aria-label="Filter server state">
+          <option value="all">All states</option>
+          <option value="running">Running</option>
+          <option value="stopped">Stopped</option>
+          <option value="network">Network exposed</option>
+        </select>
+      </div>
+      <div id="serving-profile-list" class="serving-profile-list" role="listbox" aria-label="Configured servers">
+        <div class="serving-list-empty"><strong>No server profiles yet</strong><p>Create a local route after your proxy pool has been validated.</p></div>
+      </div>
+    </aside>
+
+    <section class="serving-detail-panel" aria-live="polite">
+      <div id="serving-detail-empty" class="serving-detail-empty">
+        <span aria-hidden="true">⇄</span>
+        <strong>Select a server profile</strong>
+        <p>Review its endpoint, candidate pool, routing policy, runtime status, and recent log output.</p>
+      </div>
+
+      <div id="serving-detail" hidden>
+        <header class="serving-detail-header">
+          <div class="serving-detail-identity">
+            <span id="serving-detail-state" class="serving-state-pill" data-state="stopped">Stopped</span>
+            <h3 id="serving-detail-name">Server profile</h3>
+            <p id="serving-detail-subtitle">HTTP listener</p>
+          </div>
+          <div id="serving-detail-actions" class="serving-detail-actions"></div>
+        </header>
+
+        <div class="serving-connection-card">
+          <div>
+            <span>Client endpoint</span>
+            <code id="serving-endpoint">—</code>
+            <small id="serving-endpoint-note">Select a profile to inspect its listener.</small>
+          </div>
+          <button class="btn btn-sm" id="serving-copy-endpoint" type="button">Copy endpoint</button>
+        </div>
+
+        <div class="serving-detail-metrics">
+          <article><span>Matching candidates</span><strong id="serving-detail-candidates">0</strong><small id="serving-detail-candidate-note">No preflight yet</small></article>
+          <article><span>Rotation</span><strong id="serving-detail-rotation">—</strong><small id="serving-detail-rotation-note">—</small></article>
+          <article><span>Authentication</span><strong id="serving-detail-auth">—</strong><small id="serving-detail-auth-note">—</small></article>
+          <article><span>Process</span><strong id="serving-detail-process">—</strong><small id="serving-detail-process-note">—</small></article>
+        </div>
+
+        <div class="serving-detail-grid">
+          <article class="serving-card">
+            <div class="serving-card-heading"><div><strong>Route policy</strong><span>How traffic is accepted and upstreams are selected</span></div></div>
+            <dl id="serving-policy-list" class="serving-definition-list"></dl>
+          </article>
+          <article class="serving-card">
+            <div class="serving-card-heading"><div><strong>Pool requirements</strong><span>Capabilities and filters applied before selection</span></div><button class="text-button" id="serving-refresh-preflight" type="button">Refresh</button></div>
+            <div id="serving-capability-list" class="serving-capability-list"></div>
+            <div id="serving-protocol-mix" class="serving-chip-list"></div>
+          </article>
+        </div>
+
+        <article class="serving-card serving-candidates-card">
+          <div class="serving-card-heading"><div><strong>Best candidate samples</strong><span>Credential-redacted proxies ordered by current cost</span></div></div>
+          <div id="serving-candidate-samples" class="serving-candidate-samples"><span>No candidates available.</span></div>
+        </article>
+
+        <article class="serving-card serving-log-card">
+          <div class="serving-card-heading"><div><strong>Runtime log</strong><span>Last 80 lines for the selected listener</span></div><button class="text-button" id="serving-refresh-log" type="button">Refresh</button></div>
+          <pre id="serving-log-output" tabindex="0">No log output yet.</pre>
+        </article>
+      </div>
+    </section>
+  </div>
+</section>

@@ -245,8 +245,9 @@ class ServerRenderTest(unittest.TestCase):
                 res = client.get('/index?tab=server')
                 self.assertEqual(res.status_code, 200)
                 self.assertIn(b'Serving Center', res.data)
-                self.assertIn(b'server-serving-overview', res.data)
-                self.assertIn(b'server-runtime-summary', res.data)
+                self.assertIn(b'serving-workspace', res.data)
+                self.assertIn(b'serving-profile-list', res.data)
+                self.assertIn(b'serving-detail-panel', res.data)
         finally:
             if getattr(db, 'Session', None) is not None:
                 db.Session.remove()
