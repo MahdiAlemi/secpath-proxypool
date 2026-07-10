@@ -13,8 +13,8 @@ from urllib.parse import urlparse
 
 import requests
 
-from proxy_importer.utils.importer import normalize_proxy_line
-from proxy_monitor.utils.validation import curl_text, is_ip, protocol_candidates, proxy_url
+from .normalization import normalize_proxy_line
+from .network import curl_text, is_ip, protocol_candidates, proxy_url
 
 CHECK_TARGETS = (
     "https://api.ipify.org",

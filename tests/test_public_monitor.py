@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -43,6 +45,54 @@ class PublicMonitorTest(unittest.TestCase):
         )
         result.score = score_result(result)
         return result
+
+    def test_public_monitor_import_is_standalone_from_application_database(self):
+        script = r"""
+import builtins
+
+blocked = {"database", "proxy_importer", "proxy_monitor", "psutil", "sqlalchemy"}
+real_import = builtins.__import__
+
+def guarded_import(name, *args, **kwargs):
+    if name.split(".", 1)[0] in blocked:
+        raise RuntimeError(f"blocked application dependency imported: {name}")
+    return real_import(name, *args, **kwargs)
+
+builtins.__import__ = guarded_import
+import public_monitor.core  # noqa: F401
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_public_monitor_normalizer_handles_source_formats_without_credentials(self):
+        from public_monitor.normalization import normalize_proxy_line
+
+        self.assertEqual(
+            normalize_proxy_line("198.51.100.10:8080", "http"),
+            ("http", "198.51.100.10", 8080, None, None),
+        )
+        self.assertEqual(
+            normalize_proxy_line("socks5 203.0.113.7 1080", "http"),
+            ("socks5", "203.0.113.7", 1080, None, None),
+        )
+        self.assertEqual(
+            normalize_proxy_line("[2001:db8::1]:1080", "socks5"),
+            ("socks5", "2001:db8::1", 1080, None, None),
+        )
+        self.assertIsNone(normalize_proxy_line("ftp://198.51.100.10:21", "http"))
+        self.assertIsNone(normalize_proxy_line("198.51.100.10:70000", "http"))
+
+        from public_monitor.network import protocol_candidates, proxy_url
+
+        self.assertEqual(proxy_url("socks5h", "2001:4860:4860::8888", 1080), "socks5h://[2001:4860:4860::8888]:1080")
+        self.assertTrue(protocol_candidates("socks5")[0]["remote_dns"])
+        self.assertEqual(protocol_candidates("https")[1]["scheme"], "http")
 
     def test_source_config_accepts_only_https_known_sections(self):
         with tempfile.TemporaryDirectory() as tmp:
