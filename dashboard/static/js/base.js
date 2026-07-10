@@ -1015,6 +1015,38 @@ function showBulkAdd() {
   document.getElementById('modal-bulk').classList.add('active');
 }
 
+
+function setTextSafe(id, value) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = value == null ? '' : value;
+}
+
+function updateInventoryOverview(data, statsData) {
+  data = data || {};
+  statsData = statsData || data;
+  setTextSafe('inventory-total', data.total || 0);
+  setTextSafe('inventory-alive', statsData.alive || 0);
+  setTextSafe('inventory-web-ready', data.web_ready || 0);
+  setTextSafe('inventory-telegram-ready', data.telegram_ready || 0);
+  setTextSafe('inventory-full-capability', data.full_capability || 0);
+
+  var protoEl = document.querySelector('#tab-proxies select');
+  var proto = protoEl ? protoEl.value : 'all';
+  var statuses = getStatusFilterParam() || 'all statuses';
+  var caps = getCapabilityFilterParam() || 'all capabilities';
+  var search = searchRules.length ? (searchRules.length + ' advanced rule' + (searchRules.length > 1 ? 's' : '')) : 'no advanced search';
+  setTextSafe('inventory-filter-summary', 'Protocol: ' + proto + ' · Status: ' + statuses + ' · Capability: ' + caps + ' · Search: ' + search);
+}
+
+function updateInventoryResultState(data) {
+  data = data || {};
+  var visible = (data.proxies || []).length;
+  var total = data.total || 0;
+  setTextSafe('inventory-result-summary', visible + ' shown on this page · ' + total + ' matching total');
+  var empty = document.getElementById('inventory-empty-state');
+  if (empty) empty.style.display = visible === 0 ? 'block' : 'none';
+}
+
 function capabilityMark(v) {
   return v ? '<span style="color:var(--success);font-weight:700">✓</span>' : '<span style="color:var(--muted)">-</span>';
 }
@@ -1053,8 +1085,13 @@ async function loadProxies() {
 
   var tbody = document.getElementById('proxies-tbody');
   tbody.innerHTML = '';
+  updateInventoryResultState(data);
 
-  data.proxies.forEach(function(p) {
+  if (!data.proxies || data.proxies.length === 0) {
+    tbody.innerHTML = '<tr class="inventory-empty-row"><td colspan="40">No rows in this view. Adjust filters or run validation.</td></tr>';
+  }
+
+  (data.proxies || []).forEach(function(p) {
     var statusClass = 'status-untested';
     var statusLabel = 'Untested';
     
@@ -1139,7 +1176,7 @@ async function loadProxies() {
     tbody.appendChild(tr);
   });
 
-  document.getElementById('pager-info').textContent = 'Page ' + data.page + ' of ' + data.pages + ' (' + data.total + ' total)';
+  document.getElementById('pager-info').textContent = 'Page ' + (data.page || 1) + ' of ' + Math.max(data.pages || 1, 1) + ' (' + (data.total || 0) + ' total)';
 
   var hasAnyActionPerm = hasPermission('proxies.test') || hasPermission('proxies.edit') || hasPermission('proxies.delete');
   var actionsHeader = document.getElementById('actions-header');
@@ -1151,10 +1188,11 @@ async function loadProxies() {
   });
 
   var pagerBtns = '<button class="btn btn-sm" onclick="goPage(1)">&laquo;</button>';
-  for (var i = Math.max(1, data.page - 2); i <= Math.min(data.pages, data.page + 2); i++) {
+  var pageCount = Math.max(data.pages || 1, 1);
+  for (var i = Math.max(1, (data.page || 1) - 2); i <= Math.min(pageCount, (data.page || 1) + 2); i++) {
     pagerBtns += '<button class="btn btn-sm ' + (i === data.page ? 'btn-primary' : '') + '" onclick="goPage(' + i + ')">' + i + '</button>';
   }
-  pagerBtns += '<button class="btn btn-sm" onclick="goPage(' + data.pages + ')">&raquo;</button>';
+  pagerBtns += '<button class="btn btn-sm" onclick="goPage(' + pageCount + ')">&raquo;</button>';
   document.getElementById('pager-btns').innerHTML = pagerBtns;
   initColumns();
 }
@@ -2610,6 +2648,7 @@ async function loadStats() {
     setTxt('stat-web-ready', data.web_ready);
     setTxt('stat-telegram-ready', data.telegram_ready);
     setTxt('stat-full-capability', data.full_capability);
+    updateInventoryOverview(data, statsData);
     
     var lastScanInfo = document.getElementById('last-scan-info');
     var lastScanTime = null;

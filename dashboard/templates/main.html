@@ -93,8 +93,12 @@ userProxyFilters = {{ proxy_filters | tojson }};
     <!-- PROXIES TAB -->
     <div id="tab-proxies" class="tab-content {{ 'hidden' if tab!='proxies' else '' }}">
       <div class="card">
-        <div class="card-header">
-          <div style="display:flex;align-items:center;gap:10px;flex:1">
+        <div class="card-header inventory-card-header">
+          <div class="inventory-toolbar-title">
+            <div class="card-title">Proxy Inventory</div>
+            <div class="section-hint">Review quality, capability, and routing readiness before serving traffic.</div>
+          </div>
+          <div class="inventory-filter-row" style="display:flex;align-items:center;gap:10px;flex:1">
             <div style="display:flex;gap:4px;align-items:center">
               <span style="font-size:12px;color:var(--muted)">Proto:</span>
               <select onchange="changeProtoFilter()" style="padding:4px 6px;border-radius:4px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:12px">
@@ -187,6 +191,21 @@ userProxyFilters = {{ proxy_filters | tojson }};
             <button class="btn btn-sm" id="btn-export-csv" onclick="exportProxies('csv')">Export CSV</button>
             <button class="btn btn-sm" id="btn-export-json" onclick="exportProxies('json')">Export JSON</button>
           </div>
+        </div>
+        <div class="inventory-overview">
+          <div class="inventory-kpi"><span>Total</span><strong id="inventory-total">0</strong><small>all imported proxies</small></div>
+          <div class="inventory-kpi"><span>Alive</span><strong id="inventory-alive">0</strong><small>eligible status pool</small></div>
+          <div class="inventory-kpi"><span>Web-ready</span><strong id="inventory-web-ready">0</strong><small>HTTPS verified</small></div>
+          <div class="inventory-kpi"><span>Telegram-ready</span><strong id="inventory-telegram-ready">0</strong><small>Telegram reachable</small></div>
+          <div class="inventory-kpi"><span>Full-capability</span><strong id="inventory-full-capability">0</strong><small>HTTPS + DNS + Telegram</small></div>
+        </div>
+        <div class="inventory-context-bar">
+          <div id="inventory-filter-summary">Showing all active inventory filters.</div>
+          <div id="inventory-result-summary">Waiting for data...</div>
+        </div>
+        <div id="inventory-empty-state" class="inventory-empty-state" style="display:none">
+          <strong>No proxies match this view.</strong>
+          <span>Try clearing capability/status filters, importing fresh sources, or running monitor validation.</span>
         </div>
         <div class="table-wrap">
           <table id="proxies-table">

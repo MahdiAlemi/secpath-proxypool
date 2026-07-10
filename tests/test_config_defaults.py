@@ -107,5 +107,28 @@ class DefaultLandingTest(unittest.TestCase):
                 db.engine.dispose()
 
 
+class InventoryRenderTest(unittest.TestCase):
+    def test_inventory_shell_renders(self):
+        from dashboard import create_app
+        from database import db
+        app = create_app()
+        app.config['TESTING'] = True
+        try:
+            with app.test_client() as client:
+                with client.session_transaction() as sess:
+                    sess['user'] = 'admin'
+                    sess['user_id'] = 0
+                res = client.get('/index?tab=proxies')
+                self.assertEqual(res.status_code, 200)
+                self.assertIn(b'inventory-overview', res.data)
+                self.assertIn(b'inventory-empty-state', res.data)
+                self.assertIn(b'Proxy Inventory', res.data)
+        finally:
+            if getattr(db, 'Session', None) is not None:
+                db.Session.remove()
+            if getattr(db, 'engine', None) is not None:
+                db.engine.dispose()
+
+
 if __name__ == '__main__':
     unittest.main()
