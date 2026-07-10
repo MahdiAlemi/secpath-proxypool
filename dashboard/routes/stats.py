@@ -68,6 +68,11 @@ def api_stats():
     ).group_by(Proxy.isp).order_by(func.count(Proxy.id).desc()).limit(15).all()
     by_isp = [{"isp": r[0], "count": r[1]} for r in by_isp]
 
+    web_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.web_https_ok.is_(True)).scalar()
+    dns_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.remote_dns_ok.is_(True)).scalar()
+    telegram_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.web_https_ok.is_(True), Proxy.telegram_ok.is_(True)).scalar()
+    full_capability = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.web_https_ok.is_(True), Proxy.remote_dns_ok.is_(True), Proxy.telegram_ok.is_(True)).scalar()
+
     return jsonify({
         "total": total,
         "alive": alive,
@@ -83,5 +88,9 @@ def api_stats():
         "by_isp": by_isp,
         "protocol_stats": protocol_stats,
         "avg_speed": round(avg_speed, 0) if avg_speed else 0,
-        "last_scan": last_scan
+        "last_scan": last_scan,
+        "web_ready": web_ready,
+        "dns_ready": dns_ready,
+        "telegram_ready": telegram_ready,
+        "full_capability": full_capability
     })

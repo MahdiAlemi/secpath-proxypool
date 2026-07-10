@@ -18,8 +18,9 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 @login_required
 @require_permission("settings.view")
 def api_settings():
-    db_type = os.getenv('DB_TYPE', 'mysql')
-    sqlite_db_path = os.getenv('SQLITE_DB_PATH', 'proxies.db')
+    from config import config
+    db_type = config.DB_TYPE
+    sqlite_db_path = config.SQLITE_DB_PATH
     sqlite_abs = sqlite_db_path if os.path.isabs(sqlite_db_path) else os.path.join(BASE_DIR, sqlite_db_path)
     return jsonify({
         "db_type": db_type,
@@ -50,7 +51,7 @@ def api_settings_password():
 def api_settings_backup():
     from config import config
 
-    db_type = os.getenv('DB_TYPE', 'mysql').lower()
+    db_type = config.DB_TYPE.lower()
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
     try:
@@ -124,7 +125,7 @@ def api_settings_backups():
 def api_settings_import():
     from config import config
 
-    db_type = os.getenv('DB_TYPE', 'mysql').lower()
+    db_type = config.DB_TYPE.lower()
     mode = request.form.get("mode", "append")
 
     if 'file' not in request.files:

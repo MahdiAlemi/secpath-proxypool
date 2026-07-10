@@ -384,6 +384,7 @@ function applyTabPermissions() {
 }
 
 let selectedStatuses = ['alive', 'flaky', 'cooling', 'soft', 'revived', 'semi-revived', 'dead', 'untested'];
+let selectedCapabilities = [];
 
 function toggleStatusFilter(status) {
   var idx = selectedStatuses.indexOf(status);
@@ -426,6 +427,49 @@ function updateStatusFilterUI() {
 function getStatusFilterParam() {
   if (selectedStatuses.length === 5) return '';
   return selectedStatuses.join(',');
+}
+
+function toggleCapabilityFilter(cap) {
+  var idx = selectedCapabilities.indexOf(cap);
+  if (idx > -1) { selectedCapabilities.splice(idx, 1); }
+  else { selectedCapabilities.push(cap); }
+  updateCapabilityFilterUI();
+  currentPage = 1;
+  loadProxies();
+}
+
+function updateCapabilityFilterUI() {
+  document.querySelectorAll('#capability-filters .stat-card').forEach(function(el) {
+    var cap = el.getAttribute('data-cap');
+    el.style.opacity = selectedCapabilities.includes(cap) ? '1' : '0.5';
+  });
+}
+
+function getCapabilityFilterParam() {
+  return selectedCapabilities.join(',');
+}
+
+function applyServerUseCase(mode) {
+  var https = document.getElementById('server-require-web-https');
+  var dns = document.getElementById('server-require-remote-dns');
+  var tg = document.getElementById('server-require-telegram');
+  var cand = document.getElementById('server-candidate-statuses');
+  if (mode === 'web') {
+    if (https) https.value = 'true';
+    if (dns) dns.value = 'false';
+    if (tg) tg.value = 'false';
+    if (cand) cand.value = 'alive';
+  } else if (mode === 'telegram') {
+    if (https) https.value = 'true';
+    if (dns) dns.value = 'true';
+    if (tg) tg.value = 'true';
+    if (cand) cand.value = 'alive';
+  } else if (mode === 'scraping') {
+    if (https) https.value = 'false';
+    if (dns) dns.value = 'false';
+    if (tg) tg.value = 'false';
+    if (cand) cand.value = 'alive';
+  }
 }
 
 async function fetchStats() {
@@ -856,6 +900,11 @@ async function loadProxies() {
 
   if (statusFilter) {
     params.append('status', statusFilter);
+  }
+
+  var capFilter = getCapabilityFilterParam();
+  if (capFilter) {
+    params.append('capability', capFilter);
   }
 
   if (searchRules.length > 0) {
@@ -2066,6 +2115,7 @@ async function showServerSettings(port) {
   document.getElementById('server-require-web-https').value = String(cfg.require_web_https !== false);
   document.getElementById('server-require-remote-dns').value = String(!!cfg.require_remote_dns);
   document.getElementById('server-require-telegram').value = String(!!cfg.require_telegram);
+  var ucEdit = document.getElementById('server-use-case'); if (ucEdit) ucEdit.value = 'custom';
   document.getElementById('server-insecure-upstream').value = cfg.insecure_upstream ? 'true' : 'false';
   document.getElementById('server-country').value = cfg.countryCodes || '';
   document.getElementById('server-regions').value = cfg.regions || '';
@@ -2111,6 +2161,7 @@ function showAddServerForm() {
   document.getElementById('server-require-web-https').value = 'true';
   document.getElementById('server-require-remote-dns').value = 'false';
   document.getElementById('server-require-telegram').value = 'false';
+  var ucAdd = document.getElementById('server-use-case'); if (ucAdd) ucAdd.value = 'web';
   document.getElementById('server-insecure-upstream').value = 'false';
   document.getElementById('server-country').value = '';
   document.getElementById('server-regions').value = '';
@@ -2462,6 +2513,14 @@ async function loadStats() {
     document.getElementById('filter-count-revived').textContent = statsData.revived || 0;
     document.getElementById('filter-count-semi-revived').textContent = statsData['semi-revived'] || 0;
     document.getElementById('filter-count-untested').textContent = statsData.untested || 0;
+
+    var setTxt = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = v || 0; };
+    setTxt('cap-count-web', data.web_ready);
+    setTxt('cap-count-telegram', data.telegram_ready);
+    setTxt('cap-count-dns', data.dns_ready);
+    setTxt('stat-web-ready', data.web_ready);
+    setTxt('stat-telegram-ready', data.telegram_ready);
+    setTxt('stat-full-capability', data.full_capability);
     
     var lastScanInfo = document.getElementById('last-scan-info');
     var lastScanTime = null;

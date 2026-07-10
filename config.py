@@ -19,8 +19,8 @@ class Config:
     DB_USER = os.getenv('DB_USER', 'proxypool')
     DB_PASS = os.getenv('DB_PASS', '')
     DB_NAME = os.getenv('DB_NAME', 'proxypool')
-    DB_TYPE = os.getenv('DB_TYPE', 'mysql')
-    DB_TYPE = os.getenv('DB_TYPE', 'mysql')
+    # Local/dev safe default: SQLite. Production MySQL must be explicit via DB_TYPE=mysql.
+    DB_TYPE = os.getenv('DB_TYPE', 'sqlite')
     
     # Connection Pooling
     DB_POOL_SIZE = int(os.getenv('DB_POOL_SIZE', 20))
@@ -35,9 +35,7 @@ class Config:
     @classmethod
     def get_database_url(cls):
         """Returns SQLAlchemy database URL"""
-        if cls.DB_TYPE.lower() == "sqlite":
-            return cls.get_sqlite_url()
-        if getattr(cls, "DB_TYPE", "mysql").lower() == "sqlite":
+        if getattr(cls, "DB_TYPE", "sqlite").lower() == "sqlite":
             return cls.get_sqlite_url()
         return f"mysql+pymysql://{cls.DB_USER}:{cls.DB_PASS}@{cls.DB_HOST}:{cls.DB_PORT}/{cls.DB_NAME}"
     

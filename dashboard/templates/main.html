@@ -78,6 +78,12 @@ userProxyFilters = {{ proxy_filters | tojson }};
               </div>
             </div>
           </div>
+          <div id="capability-filters" style="display:flex;gap:4px;align-items:center">
+            <span style="font-size:12px;color:var(--muted)">Ready:</span>
+            <div class="stat-card" data-cap="web_https" onclick="toggleCapabilityFilter('web_https')" style="padding:2px 8px;cursor:pointer;border-radius:4px;text-align:center;opacity:0.5" title="Alive proxies that load HTTPS sites (web browsing ready)"><div style="font-size:9px;color:var(--muted)">Web</div><div id="cap-count-web" style="font-weight:bold;font-size:12px;color:var(--success)">0</div></div>
+            <div class="stat-card" data-cap="telegram" onclick="toggleCapabilityFilter('telegram')" style="padding:2px 8px;cursor:pointer;border-radius:4px;text-align:center;opacity:0.5" title="Alive proxies that reach the Telegram API"><div style="font-size:9px;color:var(--muted)">Telegram</div><div id="cap-count-telegram" style="font-weight:bold;font-size:12px;color:#0088cc">0</div></div>
+            <div class="stat-card" data-cap="remote_dns" onclick="toggleCapabilityFilter('remote_dns')" style="padding:2px 8px;cursor:pointer;border-radius:4px;text-align:center;opacity:0.5" title="Alive proxies that resolve DNS remotely (leak-safe)"><div style="font-size:9px;color:var(--muted)">DNS</div><div id="cap-count-dns" style="font-weight:bold;font-size:12px;color:#8b5cf6">0</div></div>
+          </div>
           <span id="last-scan-info" style="font-size:11px;color:var(--text);background:var(--panel-light);padding:4px 10px;border-radius:12px;white-space:nowrap"></span>
           <div style="display:flex;gap:4px;align-items:center;flex:1;justify-content:flex-end">
             <button class="btn btn-sm" onclick="toggleColumnsMenu()">&#9881; Columns</button>
@@ -296,6 +302,9 @@ userProxyFilters = {{ proxy_filters | tojson }};
         <div class="stat-card"><div class="stat-value" id="stat-semi-revived" style="color:#424242">0</div><div class="stat-label">Semi-Revived</div></div>
         <div class="stat-card"><div class="stat-value" id="stat-dead" style="color:var(--danger)">0</div><div class="stat-label">Dead</div></div>
         <div class="stat-card"><div class="stat-value" id="stat-untested" style="color:var(--muted)">0</div><div class="stat-label">Untested</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-web-ready" style="color:var(--success)">0</div><div class="stat-label">Web-ready</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-telegram-ready" style="color:#0088cc">0</div><div class="stat-label">Telegram-ready</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-full-capability" style="color:var(--accent)">0</div><div class="stat-label">Full-capability</div></div>
       </div>
       
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
@@ -401,7 +410,7 @@ userProxyFilters = {{ proxy_filters | tojson }};
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-sm" onclick="cleanupLogs()">Clear Logs</button>
         <button class="btn btn-sm" onclick="cleanupRuntimeFiles()">Clear Runtime Files</button>
-        <button class="btn btn-sm" onclick="cleanupLegacyStatuses()">Normalize Legacy Statuses</button>
+        <button class="btn btn-sm btn-primary" onclick="cleanupLegacyStatuses()" title="Recommended after upgrading: reclassify old pre-Phase-5 revived rows so a monitor run re-validates them">⚡ Normalize Legacy Statuses</button>
       </div>
       <div style="font-size:12px;color:var(--muted);margin-top:6px">Cleanup actions do not delete the database. Normalize fixes old pre-Phase-5 revived records.</div>
     </div>
@@ -833,6 +842,16 @@ userProxyFilters = {{ proxy_filters | tojson }};
             <option value="false">No</option>
             <option value="true">Yes</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Use Case Preset</label>
+          <select id="server-use-case" class="form-input" onchange="applyServerUseCase(this.value)">
+            <option value="custom">Custom (manual)</option>
+            <option value="web" selected>Web Browsing (HTTPS)</option>
+            <option value="telegram">Telegram (HTTPS+DNS+TG)</option>
+            <option value="scraping">Scraping / HTTP</option>
+          </select>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Presets set the Require flags below automatically.</div>
         </div>
         <div class="form-group">
           <label class="form-label">Candidate Statuses</label>
