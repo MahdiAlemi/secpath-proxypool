@@ -5,7 +5,7 @@ This runbook covers local WSL operation only. It does not authorize or perform d
 ## 1. Enter the project
 
 ```bash
-cd /home/mahdi/projects/proxypool
+cd /home/mahdi/projects/proxyPool
 source .venv/bin/activate
 ```
 
@@ -83,7 +83,7 @@ bash scripts/clean_runtime.sh --include-db
 ## 7. Apply a ZIP overlay
 
 ```bash
-cd /home/mahdi/projects/proxypool
+cd /home/mahdi/projects/proxyPool
 unzip -o /mnt/c/Users/Mahdi/Downloads/<overlay>.zip -d .
 ```
 
@@ -142,3 +142,53 @@ Never commit `.env`, databases, runtime JSON, progress snapshots, logs, PID file
 ## 10. Deployment boundary
 
 No local script in the rebuild workflow should deploy, restart production services, edit reverse-proxy configuration, or modify a remote host. Deployment requires a separate explicit instruction and a separately reviewed procedure.
+
+## 11. Authentication bootstrap
+
+There is no built-in default dashboard password. Create a database-backed administrator against the active database:
+
+```bash
+cd /home/mahdi/projects/proxyPool
+source .venv/bin/activate
+python3 scripts/create_admin.py --username admin --role admin
+```
+
+To intentionally replace that database user's password or role:
+
+```bash
+python3 scripts/create_admin.py --username admin --role admin --update
+```
+
+The command prompts for the password and does not place it in shell history or process arguments.
+
+Set persistent secrets in `.env` before normal use:
+
+```dotenv
+FLASK_SECRET_KEY=<random-64-hex-value>
+JWT_SECRET=<different-random-64-hex-value>
+SESSION_COOKIE_SECURE=false
+```
+
+Generate values with:
+
+```bash
+python3 -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Use `SESSION_COOKIE_SECURE=true` only behind HTTPS. The local HTTP development address requires `false`.
+
+## 12. Phase 1 verification
+
+After applying the security overlay:
+
+```bash
+bash scripts/health_check.sh
+bash scripts/repo_hygiene_check.sh
+python3 -m compileall -q dashboard tests scripts/create_admin.py
+node --check dashboard/static/js/base.js
+node --check dashboard/static/js/login.js
+git diff --check
+git status --short
+```
+
+Before opening the dashboard, confirm either a database user exists or `DASHBOARD_PASSWORD` is intentionally configured. No deploy, service restart, or remote change is part of these steps.

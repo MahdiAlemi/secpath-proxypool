@@ -1,5 +1,3 @@
-import re
-import time
 import argparse
 import requests
 from urllib.parse import urlparse
@@ -29,7 +27,7 @@ def import_from_url(default_protocol, url):
             continue
         
         protocol, ip, port, username, password = result
-        key = (protocol, ip, port)
+        key = (protocol, ip, port, username or '', password or '')
         
         if key in seen:
             continue
@@ -75,60 +73,96 @@ def import_from_links(file_path):
 
 
 def import_from_manual(file_path):
-    with open(file_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
+    with open(file_path, "r", encoding="utf-8") as source:
+        for raw_line in source:
+            result = normalize_proxy_line(raw_line, "http")
+            if not result:
                 continue
-            parts = line.split()
-            if len(parts) < 3:
-                continue
-            protocol, ip, port = parts[:3]
-            user = parts[3] if len(parts) > 3 else None
-            password = parts[4] if len(parts) > 4 else None
-            
+            protocol, ip, port, username, password = result
             try:
-                insert_proxy(protocol, ip, int(port), user or '', password or '')
-            except Exception as e:
-                print(f"[!] Error inserting {ip}:{port} -> {e}")
+                insert_proxy(protocol, ip, port, username or "", password or "")
+            except Exception as exc:
+                print(f"[!] Error inserting {ip}:{port} -> {exc}")
 
 
 def normalize_proxy_line(line, default_protocol):
-    line = line.strip()
-    
-    if not line:
+    """Normalize common proxy-list formats.
+
+    Supported examples:
+    - ``http://user:pass@host:8080``
+    - ``http host:8080 user pass``
+    - ``http host 8080 user pass``
+    - ``host:8080:user:pass``
+    - ``[2001:db8::1]:8080``
+    """
+    from urllib.parse import unquote
+
+    line = str(line or "").strip()
+    if not line or line.startswith("#"):
         return None
-    
-    protocol = default_protocol
+
+    protocol = str(default_protocol or "http").strip().lower()
     username = password = None
-    
+
     if "://" in line:
-        parsed = urlparse(line)
-        protocol = parsed.scheme.lower()
-        ip = parsed.hostname
-        port = parsed.port
-        if not ip or not port:
+        try:
+            parsed = urlparse(line)
+            if not parsed.scheme or not parsed.hostname or parsed.port is None:
+                return None
+            return (
+                parsed.scheme.lower(),
+                parsed.hostname,
+                parsed.port,
+                unquote(parsed.username) if parsed.username is not None else None,
+                unquote(parsed.password) if parsed.password is not None else None,
+            )
+        except ValueError:
             return None
-        return protocol, ip, port, parsed.username, parsed.password
-    
-    parts = line.split(":")
-    
-    if len(parts) >= 2:
-        ip = parts[0]
-        port = parts[1]
-        
-        if not port.isdigit():
-            return None
-        
-        port = int(port)
-        
-        if len(parts) >= 4:
-            username = parts[2]
-            password = parts[3]
-        
-        return protocol, ip, port, username, password
-    
-    return None
+
+    tokens = line.split()
+    if tokens and tokens[0].lower() in {"http", "https", "socks4", "socks5"}:
+        protocol = tokens.pop(0).lower()
+
+    if len(tokens) >= 2 and tokens[1].isdigit():
+        host = tokens[0].strip("[]")
+        port_text = tokens[1]
+        auth = tokens[2:4]
+    elif tokens:
+        address = tokens[0]
+        auth = tokens[1:3]
+        host = None
+        port_text = None
+
+        if address.startswith("["):
+            closing = address.find("]")
+            if closing <= 1 or closing + 1 >= len(address) or address[closing + 1] != ":":
+                return None
+            host = address[1:closing]
+            port_text = address[closing + 2 :]
+        else:
+            legacy = address.split(":", 3)
+            if len(legacy) == 4 and legacy[1].isdigit():
+                host, port_text, embedded_user, embedded_password = legacy
+                if not auth:
+                    auth = [embedded_user, embedded_password]
+            elif len(legacy) == 2:
+                host, port_text = legacy
+            else:
+                return None
+    else:
+        return None
+
+    if not host or not port_text or not port_text.isdigit():
+        return None
+    port = int(port_text)
+    if not 1 <= port <= 65535:
+        return None
+
+    if auth:
+        username = auth[0] if len(auth) >= 1 else None
+        password = auth[1] if len(auth) >= 2 else None
+
+    return protocol, host, port, username, password
 
 
 def main():

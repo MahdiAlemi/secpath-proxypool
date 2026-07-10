@@ -1,179 +1,196 @@
 import json
 
-from flask import Blueprint, request, jsonify, g
-from sqlalchemy import or_, desc, asc
+from flask import Blueprint, g, jsonify, request
+from sqlalchemy import asc, desc, or_
 from sqlalchemy.exc import IntegrityError
-from database import Proxy
-from proxy_monitor.utils.validation import validate_proxy
-from proxy_importer.utils.importer import normalize_proxy_line
 
 from dashboard.config import PROTOCOLS
-from dashboard.decorators import login_required, require_permission, get_user_proxy_filters, get_current_user
+from dashboard.decorators import (
+    get_current_user,
+    get_user_proxy_filters,
+    has_permission,
+    login_required,
+    require_permission,
+)
+from dashboard.proxy_scope import (
+    SAFE_FILTER_COLUMNS,
+    apply_proxy_scope,
+    public_proxy_dict,
+)
+from dashboard.security import api_error
 from dashboard.utils.helpers import clamp_int
+from database import Proxy
+from proxy_importer.utils.importer import normalize_proxy_line
+from proxy_monitor.utils.validation import validate_proxy
 
-proxies_bp = Blueprint('proxies', __name__)
+proxies_bp = Blueprint("proxies", __name__)
 
 
 def get_db():
-    """Get database session from Flask g object"""
     if "db_session" not in g:
         from database import db
+
         g.db_session = db.get_session()
     return g.db_session
 
 
-def validate_proxy_payload(data):
-    """Validate the minimum proxy identity accepted by CRUD endpoints."""
+def _json_object():
+    value = request.get_json(silent=True)
+    return value if isinstance(value, dict) else None
+
+
+def validate_proxy_payload(data, *, partial=False):
     if not isinstance(data, dict):
         return None, "A JSON object is required"
 
-    protocol = str(data.get("protocol", "")).strip().lower()
-    host = str(data.get("ip", "")).strip()
-    username = str(data.get("username", "") or "")
-    password = str(data.get("password", "") or "")
+    result = {}
+    if not partial or "protocol" in data:
+        protocol = str(data.get("protocol", "")).strip().lower()
+        if protocol not in PROTOCOLS:
+            return None, f"protocol must be one of: {', '.join(PROTOCOLS)}"
+        result["protocol"] = protocol
 
-    if protocol not in PROTOCOLS:
-        return None, f"protocol must be one of: {', '.join(PROTOCOLS)}"
-    if not host or len(host) > 255 or any(char.isspace() for char in host):
-        return None, "ip/host is required and must not contain whitespace"
+    if not partial or "ip" in data:
+        host = str(data.get("ip", "")).strip()
+        if not host or len(host) > 255 or any(char.isspace() for char in host):
+            return None, "ip/host is required and must not contain whitespace"
+        result["ip"] = host
+
+    if not partial or "port" in data:
+        try:
+            port = int(data.get("port"))
+        except (TypeError, ValueError):
+            return None, "port must be an integer between 1 and 65535"
+        if not 1 <= port <= 65535:
+            return None, "port must be an integer between 1 and 65535"
+        result["port"] = port
+
+    for field in ("username", "password"):
+        if field in data:
+            value = str(data.get(field, "") or "")
+            if len(value) > 255:
+                return None, f"{field} must be at most 255 characters"
+            result[field] = value
+        elif not partial:
+            result[field] = ""
+
+    return result, None
+
+
+def _apply_requested_filters(query):
+    proto = request.args.get("proto", "all")
+    status = request.args.get("status", "all")
+    search = request.args.get("search", "").strip()[:255]
+    ip_filter = request.args.get("ip", "").strip()[:255]
+    country_filter = request.args.get("country", "").strip()[:32]
+    isp_filter = request.args.get("isp", "").strip()[:255]
+    capability = request.args.get("capability", "")
+
+    if proto != "all" and proto in PROTOCOLS:
+        query = query.filter(Proxy.protocol == proto)
+
+    if status and status != "all":
+        conditions = []
+        for value in [part.strip() for part in status.split(",") if part.strip()]:
+            if value == "untested":
+                conditions.append(or_(Proxy.status == "untested", Proxy.status.is_(None)))
+            else:
+                conditions.append(Proxy.status == value)
+        if conditions:
+            query = query.filter(or_(*conditions))
+
+    if search:
+        like = f"%{search}%"
+        query = query.filter(
+            or_(
+                Proxy.ip.like(like),
+                Proxy.countryCode.like(like),
+                Proxy.isp.like(like),
+                Proxy.city.like(like),
+                Proxy.regionName.like(like),
+            )
+        )
+    if ip_filter:
+        query = query.filter(Proxy.ip.like(f"%{ip_filter}%"))
+    if country_filter:
+        query = query.filter(Proxy.countryCode.like(f"%{country_filter}%"))
+    if isp_filter:
+        query = query.filter(Proxy.isp.like(f"%{isp_filter}%"))
+
+    capabilities = {item.strip() for item in capability.split(",") if item.strip()}
+    if "web_https" in capabilities:
+        query = query.filter(Proxy.web_https_ok.is_(True))
+    if "remote_dns" in capabilities:
+        query = query.filter(Proxy.remote_dns_ok.is_(True))
+    if "telegram" in capabilities:
+        query = query.filter(Proxy.telegram_ok.is_(True))
 
     try:
-        port = int(data.get("port"))
-    except (TypeError, ValueError):
-        return None, "port must be an integer between 1 and 65535"
-    if not 1 <= port <= 65535:
-        return None, "port must be an integer between 1 and 65535"
-    if len(username) > 255 or len(password) > 255:
-        return None, "username and password must be at most 255 characters"
+        rules = json.loads(request.args.get("adv_search", "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        rules = []
+    if not isinstance(rules, list):
+        rules = []
 
-    return {
-        "protocol": protocol,
-        "ip": host,
-        "port": port,
-        "username": username,
-        "password": password,
-    }, None
+    for rule in rules[:20]:
+        if not isinstance(rule, dict):
+            continue
+        name = str(rule.get("column", ""))
+        operator = str(rule.get("operator", "contains"))
+        value = rule.get("value", "")
+        if name not in SAFE_FILTER_COLUMNS or value in (None, ""):
+            continue
+        column = getattr(Proxy, name)
+        if operator == "contains":
+            query = query.filter(column.like(f"%{str(value)[:255]}%"))
+        elif operator == "equals":
+            query = query.filter(column == value)
+        elif operator == "starts":
+            query = query.filter(column.like(f"{str(value)[:255]}%"))
+        elif operator == "gt":
+            query = query.filter(column > value)
+        elif operator == "lt":
+            query = query.filter(column < value)
+        elif operator == "gte":
+            query = query.filter(column >= value)
+        elif operator == "lte":
+            query = query.filter(column <= value)
+    return query
+
+
+def _scoped_proxy(session, proxy_id):
+    return apply_proxy_scope(session.query(Proxy)).filter(Proxy.id == proxy_id).first()
 
 
 @proxies_bp.route("/api/proxies", methods=["GET"])
 @login_required
 @require_permission("proxies.view")
 def api_proxies():
-    session = get_db()
+    db_session = get_db()
     page = clamp_int(request.args.get("page", 1), 1)
-    page_size_raw = request.args.get("page_size", "50")
-    page_size = clamp_int(page_size_raw, 50, 1, 1000)
-    proto = request.args.get("proto", "all")
-    status = request.args.get("status", "all")
+    page_size = clamp_int(request.args.get("page_size", "50"), 50, 1, 1000)
     sort_col = request.args.get("sort_col", "cost")
     sort_order = request.args.get("sort_order", "asc")
-    search = request.args.get("search", "")
-    ip_filter = request.args.get("ip", "")
-    country_filter = request.args.get("country", "")
-    isp_filter = request.args.get("isp", "")
-    adv_search_json = request.args.get("adv_search", "[]")
-    capability = request.args.get("capability", "")
+    if sort_col not in SAFE_FILTER_COLUMNS:
+        sort_col = "cost"
 
-    query = session.query(Proxy)
-
-    # Apply user proxy filters (status and protocol restrictions)
-    user = get_current_user()
-    if user:
-        user_filters = get_user_proxy_filters(user)
-        # If user has status filter, apply it
-        if user_filters["statuses"]:
-            query = query.filter(Proxy.status.in_(user_filters["statuses"]))
-        # If user has protocol filter, apply it
-        if user_filters["protocols"]:
-            query = query.filter(Proxy.protocol.in_(user_filters["protocols"]))
-
-    if proto != "all":
-        query = query.filter(Proxy.protocol == proto)
-
-    if status and status != "all":
-        statuses = [s.strip() for s in status.split(',')]
-        status_conditions = []
-        for s in statuses:
-            if s == "untested":
-                status_conditions.append(or_(Proxy.status == 'untested', Proxy.status.is_(None)))
-            else:
-                status_conditions.append(Proxy.status == s)
-        if status_conditions:
-            query = query.filter(or_(*status_conditions))
-
-    if search:
-        search_term = f"%{search}%"
-        query = query.filter(or_(
-            Proxy.ip.like(search_term),
-            Proxy.countryCode.like(search_term),
-            Proxy.isp.like(search_term),
-            Proxy.city.like(search_term),
-            Proxy.regionName.like(search_term)
-        ))
-
-    if ip_filter:
-        query = query.filter(Proxy.ip.like(f"%{ip_filter}%"))
-    
-    if country_filter:
-        query = query.filter(Proxy.countryCode.like(f"%{country_filter}%"))
-    
-    if isp_filter:
-        query = query.filter(Proxy.isp.like(f"%{isp_filter}%"))
-
-    if capability:
-        caps = {c.strip() for c in capability.split(',') if c.strip()}
-        if 'web_https' in caps:
-            query = query.filter(Proxy.web_https_ok.is_(True))
-        if 'remote_dns' in caps:
-            query = query.filter(Proxy.remote_dns_ok.is_(True))
-        if 'telegram' in caps:
-            query = query.filter(Proxy.telegram_ok.is_(True))
-
-    try:
-        adv_rules = json.loads(adv_search_json)
-        for rule in adv_rules:
-            col = rule.get('column', '')
-            op = rule.get('operator', 'contains')
-            val = rule.get('value', '')
-            if not col or not val:
-                continue
-            column = getattr(Proxy, col, None)
-            if column is None:
-                continue
-            if op == 'contains':
-                query = query.filter(column.like(f"%{val}%"))
-            elif op == 'equals':
-                query = query.filter(column == val)
-            elif op == 'starts':
-                query = query.filter(column.like(f"{val}%"))
-            elif op == 'gt':
-                query = query.filter(column > val)
-            elif op == 'lt':
-                query = query.filter(column < val)
-            elif op == 'gte':
-                query = query.filter(column >= val)
-            elif op == 'lte':
-                query = query.filter(column <= val)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        pass
-
+    query = _apply_requested_filters(apply_proxy_scope(db_session.query(Proxy)))
     total = query.count()
     pages = max(1, (total + page_size - 1) // page_size)
-    offset = (page - 1) * page_size
+    page = min(page, pages)
 
-    if sort_order.lower() == 'desc':
-        query = query.order_by(desc(getattr(Proxy, sort_col, Proxy.cost)))
-    else:
-        query = query.order_by(asc(getattr(Proxy, sort_col, Proxy.cost)))
-
-    proxies = query.offset(offset).limit(page_size).all()
-
-    return jsonify({
-        "proxies": [p.to_dict() for p in proxies],
-        "total": total,
-        "page": page,
-        "pages": pages
-    })
+    order_column = getattr(Proxy, sort_col)
+    query = query.order_by(desc(order_column) if sort_order.lower() == "desc" else asc(order_column))
+    rows = query.offset((page - 1) * page_size).limit(page_size).all()
+    return jsonify(
+        {
+            "success": True,
+            "proxies": [public_proxy_dict(proxy) for proxy in rows],
+            "total": total,
+            "page": page,
+            "pages": pages,
+        }
+    )
 
 
 @proxies_bp.route("/api/proxies", methods=["POST"])
@@ -181,10 +198,9 @@ def api_proxies():
 @require_permission("proxies.add")
 def api_proxies_add():
     db_session = get_db()
-    payload, error = validate_proxy_payload(request.get_json(silent=True))
+    payload, error = validate_proxy_payload(_json_object())
     if error:
-        return jsonify({"success": False, "error": error}), 400
-
+        return api_error(error, 400, "invalid_proxy")
     try:
         proxy = Proxy(**payload, cost=1.0)
         db_session.add(proxy)
@@ -192,93 +208,114 @@ def api_proxies_add():
         return jsonify({"success": True, "id": proxy.id}), 201
     except IntegrityError:
         db_session.rollback()
-        return jsonify({"success": False, "error": "Proxy already exists"}), 409
+        return api_error("Proxy already exists", 409, "duplicate_proxy")
     except Exception:
         db_session.rollback()
-        return jsonify({"success": False, "error": "Could not add proxy"}), 500
+        return api_error("Could not add proxy", 500, "proxy_create_failed")
 
 
 @proxies_bp.route("/api/proxies/bulk", methods=["POST"])
 @login_required
 @require_permission("proxies.add")
 def api_proxies_bulk():
-    session = get_db()
-    data = request.json
-    lines = data.get("proxies", "").strip().split("\n")
+    db_session = get_db()
+    data = _json_object()
+    if data is None:
+        return api_error("A JSON object is required", 400, "invalid_json")
+    content = str(data.get("proxies", ""))
+    if len(content) > 2_000_000:
+        return api_error("Bulk proxy input is too large", 413, "payload_too_large")
+
     added = 0
-    for line in lines:
+    skipped = 0
+    for line in content.splitlines()[:100_000]:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         parsed = normalize_proxy_line(line, "http")
-        if parsed:
-            proto, ip, port, user, pwd = parsed
-            user = user or ""
-            pwd = pwd or ""
-            existing = session.query(Proxy).filter_by(
-                protocol=proto, ip=ip, port=port, username=user, password=pwd
-            ).first()
-            if not existing:
-                proxy = Proxy(
-                    protocol=proto,
-                    ip=ip,
-                    port=port,
-                    username=user,
-                    password=pwd,
-                    cost=1.0,
-                )
-                session.add(proxy)
-                added += 1
-    session.commit()
-    return jsonify({"success": True, "added": added})
+        if not parsed:
+            skipped += 1
+            continue
+        protocol, ip, port, username, password = parsed
+        payload, error = validate_proxy_payload(
+            {
+                "protocol": protocol,
+                "ip": ip,
+                "port": port,
+                "username": username or "",
+                "password": password or "",
+            }
+        )
+        if error:
+            skipped += 1
+            continue
+        exists = db_session.query(Proxy.id).filter_by(**payload).first()
+        if exists:
+            skipped += 1
+            continue
+        db_session.add(Proxy(**payload, cost=1.0))
+        added += 1
+    try:
+        db_session.commit()
+    except IntegrityError:
+        db_session.rollback()
+        return api_error("Bulk import contained conflicting rows", 409, "duplicate_proxy")
+    return jsonify({"success": True, "added": added, "skipped": skipped})
 
 
 @proxies_bp.route("/api/proxies/<int:proxy_id>", methods=["DELETE"])
 @login_required
 @require_permission("proxies.delete")
 def api_proxies_delete(proxy_id):
-    session = get_db()
+    db_session = get_db()
+    proxy = _scoped_proxy(db_session, proxy_id)
+    if not proxy:
+        return api_error("Proxy not found", 404, "not_found")
     try:
-        proxy = session.query(Proxy).filter_by(id=proxy_id).first()
-        if proxy:
-            session.delete(proxy)
-            session.commit()
+        db_session.delete(proxy)
+        db_session.commit()
         return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"success": False, "error": str(e)})
+    except Exception:
+        db_session.rollback()
+        return api_error("Could not delete proxy", 500, "proxy_delete_failed")
 
 
 @proxies_bp.route("/api/proxies/<int:proxy_id>", methods=["PUT"])
 @login_required
 @require_permission("proxies.edit")
 def api_proxies_update(proxy_id):
-    session = get_db()
-    data = request.json
+    db_session = get_db()
+    data = _json_object()
+    payload, error = validate_proxy_payload(data, partial=True)
+    if error:
+        return api_error(error, 400, "invalid_proxy")
+    if any(key in payload for key in ("username", "password")) and not has_permission("proxies.credentials"):
+        return api_error("Credential changes require proxies.credentials", 403, "permission_denied")
+
+    proxy = _scoped_proxy(db_session, proxy_id)
+    if not proxy:
+        return api_error("Proxy not found", 404, "not_found")
+    for key, value in payload.items():
+        setattr(proxy, key, value)
     try:
-        proxy = session.query(Proxy).filter_by(id=proxy_id).first()
-        if proxy:
-            proxy.protocol = data.get("protocol", proxy.protocol)
-            proxy.ip = data.get("ip", proxy.ip)
-            proxy.port = data.get("port", proxy.port)
-            proxy.username = data.get("username", "")
-            proxy.password = data.get("password", "")
-            session.commit()
+        db_session.commit()
         return jsonify({"success": True})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"success": False, "error": str(e)})
+    except IntegrityError:
+        db_session.rollback()
+        return api_error("Proxy already exists", 409, "duplicate_proxy")
+    except Exception:
+        db_session.rollback()
+        return api_error("Could not update proxy", 500, "proxy_update_failed")
 
 
 @proxies_bp.route("/api/proxies/test/<int:proxy_id>", methods=["POST"])
 @login_required
 @require_permission("proxies.test")
 def api_proxies_test(proxy_id):
-    session = get_db()
-    proxy = session.query(Proxy).filter_by(id=proxy_id).first()
+    db_session = get_db()
+    proxy = _scoped_proxy(db_session, proxy_id)
     if not proxy:
-        return jsonify({"success": False, "error": "Proxy not found"})
-
+        return api_error("Proxy not found", 404, "not_found")
     try:
         summary = validate_proxy(proxy.to_dict(), timeout=5, telegram=True)
         proxy.web_http_ok = bool(summary.get("web_http_ok"))
@@ -288,62 +325,59 @@ def api_proxies_test(proxy_id):
         proxy.exit_ip = summary.get("exit_ip")
         proxy.validation_profile = "telegram" if proxy.telegram_ok else ("web" if proxy.web_https_ok else "basic")
         proxy.validation_summary = summary
-        session.commit()
-        return jsonify({
-            "success": True,
-            "result": "alive" if summary.get("ok") else "dead",
-            "response": summary.get("exit_ip") or "",
-            "validation": summary
-        })
-    except Exception as e:
-        session.rollback()
-        return jsonify({"success": False, "result": "dead", "error": str(e)})
+        db_session.commit()
+        return jsonify(
+            {
+                "success": True,
+                "result": "alive" if summary.get("ok") else "dead",
+                "response": summary.get("exit_ip") or "",
+                "validation": summary,
+            }
+        )
+    except Exception:
+        db_session.rollback()
+        return api_error("Proxy test failed", 502, "proxy_test_failed")
 
 
 @proxies_bp.route("/api/proxies/delete", methods=["POST"])
 @login_required
 @require_permission("proxies.delete")
 def api_proxies_bulk_delete():
-    session = get_db()
-    data = request.json
-    
+    db_session = get_db()
+    data = _json_object()
+    if data is None:
+        return api_error("A JSON object is required", 400, "invalid_json")
+
+    query = apply_proxy_scope(db_session.query(Proxy))
+    protocol = str(data.get("protocol", "all"))
+    status = str(data.get("status", "all"))
+    if protocol != "all":
+        if protocol not in PROTOCOLS:
+            return api_error("Invalid protocol", 400, "invalid_filter")
+        query = query.filter(Proxy.protocol == protocol)
+    if status != "all":
+        if status == "untested":
+            query = query.filter(or_(Proxy.status == "untested", Proxy.status.is_(None)))
+        else:
+            query = query.filter(Proxy.status == status)
+
+    count = query.count()
+    if count == 0:
+        return api_error("No proxies match the criteria", 404, "not_found")
     try:
-        query = session.query(Proxy)
-        
-        protocol = data.get("protocol", "all")
-        status = data.get("status", "all")
-        
-        if protocol != "all":
-            query = query.filter(Proxy.protocol == protocol)
-        
-        if status != "all":
-            if status == "untested":
-                query = query.filter(or_(Proxy.status == 'untested', Proxy.status.is_(None)))
-            else:
-                query = query.filter(Proxy.status == status)
-        
-        count = query.count()
-        
-        if count == 0:
-            return jsonify({"success": False, "error": "No proxies match the criteria", "deleted": 0})
-        
         query.delete(synchronize_session=False)
-        session.commit()
-        
+        db_session.commit()
         return jsonify({"success": True, "deleted": count})
-    except Exception as e:
-        session.rollback()
-        return jsonify({"success": False, "error": str(e), "deleted": 0})
+    except Exception:
+        db_session.rollback()
+        return api_error("Could not delete proxies", 500, "proxy_delete_failed")
 
 
 @proxies_bp.route("/api/proxies/my-filters", methods=["GET"])
 @login_required
 @require_permission("proxies.view")
 def api_proxies_my_filters():
-    """Get current user's proxy visibility filters"""
     user = get_current_user()
     if not user:
-        return jsonify({"error": "User not found"}), 404
-    
-    filters = get_user_proxy_filters(user)
-    return jsonify(filters)
+        return api_error("User not found", 404, "not_found")
+    return jsonify({"success": True, **get_user_proxy_filters(user)})

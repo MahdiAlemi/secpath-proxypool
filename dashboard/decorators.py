@@ -1,8 +1,9 @@
 import jwt
 from functools import wraps
 from datetime import datetime, timedelta, timezone
-from flask import redirect, url_for, session, jsonify, g, request
+from flask import redirect, url_for, session, g, request
 from dashboard.config import ROLE_PERMISSIONS, ALL_PERMISSIONS, JWT_SECRET, JWT_EXPIRY_HOURS
+from dashboard.security import api_error
 from database import db, Token
 
 
@@ -86,7 +87,9 @@ def get_user_from_token():
     if not auth_header or not auth_header.startswith('Bearer '):
         return None
     
-    token = auth_header.split(' ')[1]
+    token = auth_header.partition(' ')[2].strip()
+    if not token:
+        return None
     user_id = validate_token(token)
     
     if not user_id:
@@ -108,11 +111,12 @@ def login_required(f):
                 user_id = uid
         
         if user_id is None:
-            if request.is_json:
-                return jsonify({'error': 'Authentication required'}), 401
+            if request.path.startswith("/api/"):
+                return api_error("Authentication required", 401, "authentication_required")
             return redirect(url_for("login"))
-        
+
         g.user_id = user_id
+        g.auth_method = "session" if "user_id" in session else "bearer"
         return f(*args, **kwargs)
     return decorated
 
@@ -194,8 +198,8 @@ def require_permission(*permissions):
             if user_id is None:
                 user_id = session.get('user_id')
             if user_id is None:
-                if request.is_json:
-                    return jsonify({'error': 'Authentication required'}), 401
+                if request.path.startswith("/api/"):
+                    return api_error("Authentication required", 401, "authentication_required")
                 return redirect(url_for("login"))
             if user_id == 0:
                 return f(*args, **kwargs)
@@ -204,16 +208,16 @@ def require_permission(*permissions):
             with db.session() as db_session:
                 user = db_session.query(User).filter_by(id=user_id, is_active=True).first()
                 if not user:
-                    if request.is_json:
-                        return jsonify({'error': 'User not found or inactive'}), 403
+                    if request.path.startswith("/api/"):
+                        return api_error("User not found or inactive", 403, "inactive_user")
                     return redirect(url_for("login"))
                 
                 perms = get_user_permissions(user)
                 
                 for perm in permissions:
                     if perm not in perms and '*' not in perms:
-                        if request.is_json:
-                            return jsonify({'error': f'Permission denied: {perm}'}), 403
+                        if request.path.startswith("/api/"):
+                            return api_error("Permission denied", 403, "permission_denied")
                         return redirect(url_for("index"))
             
             return f(*args, **kwargs)

@@ -3,17 +3,169 @@ import subprocess
 import sys
 import signal
 import time
-import glob
 import psutil
 
 from flask import Blueprint, request, jsonify, Response
 
 from dashboard.decorators import login_required, require_permission
-from dashboard.config import load_servers_config, save_servers_config
+from dashboard.proxy_scope import apply_proxy_scope, public_proxy_dict
+from dashboard.security import api_error
+from dashboard.config import PROTOCOLS, ROTATE_MODES, load_servers_config, save_servers_config
 from dashboard.utils.process import get_server_status
 from dashboard.utils.helpers import log
 
 server_bp = Blueprint('server', __name__)
+
+
+_BOOL_FIELDS = {
+    "insecure_upstream",
+    "require_web_https",
+    "require_remote_dns",
+    "require_telegram",
+    "readonly",
+}
+_OPTIONAL_BOOL_TEXT_FIELDS = {"mobile", "proxy", "hosting"}
+_TEXT_FIELDS = {
+    "auth_required",
+    "username",
+    "password",
+    "certfile",
+    "keyfile",
+    "sticky_upstream",
+    "upstream_protocol",
+    "candidate_statuses",
+    "countryCodes",
+    "regions",
+    "cities",
+    "orgs",
+    "isp",
+    "asn",
+    "continentCode",
+    "zip_codes",
+    "timezones",
+}
+
+
+def _json_object():
+    value = request.get_json(silent=True)
+    return value if isinstance(value, dict) else None
+
+
+def _parse_port(value):
+    try:
+        port = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("port must be an integer between 1 and 65535") from exc
+    if not 1 <= port <= 65535:
+        raise ValueError("port must be an integer between 1 and 65535")
+    return port
+
+
+def _parse_bool(value, field):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off", ""}:
+            return False
+    if value in (0, 1):
+        return bool(value)
+    raise ValueError(f"{field} must be a boolean")
+
+
+def _normalize_server_config(data, *, existing=None):
+    if not isinstance(data, dict):
+        raise ValueError("A JSON object is required")
+    normalized = dict(existing or {})
+    normalized.update(data)
+
+    port = _parse_port(normalized.get("port", 8080))
+    protocol = str(normalized.get("protocol", "http")).strip().lower()
+    if protocol not in PROTOCOLS:
+        raise ValueError("protocol is invalid")
+    rotate = str(normalized.get("rotate", "better_cost")).strip().lower()
+    if rotate not in ROTATE_MODES:
+        raise ValueError("rotate mode is invalid")
+
+    bind = str(normalized.get("bind", "127.0.0.1")).strip()
+    if not bind or len(bind) > 255 or any(char.isspace() for char in bind) or "/" in bind or "\\" in bind:
+        raise ValueError("bind address is invalid")
+
+    result = {
+        "protocol": protocol,
+        "bind": bind,
+        "port": port,
+        "rotate": rotate,
+    }
+
+    for field, default, minimum, maximum, cast in (
+        ("rotate_interval", 60, 1, 86400, int),
+        ("min_cost", 0.0, 0.0, 1_000_000.0, float),
+    ):
+        try:
+            number = cast(normalized.get(field, default))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field} is invalid") from exc
+        if not minimum <= number <= maximum:
+            raise ValueError(f"{field} is out of range")
+        result[field] = number
+
+    threshold = normalized.get("cost_threshold")
+    if threshold not in (None, ""):
+        try:
+            threshold = float(threshold)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("cost_threshold is invalid") from exc
+        if not 0.0 <= threshold <= 1_000_000.0:
+            raise ValueError("cost_threshold is out of range")
+        result["cost_threshold"] = threshold
+    else:
+        result["cost_threshold"] = None
+
+    for field in _BOOL_FIELDS:
+        result[field] = _parse_bool(normalized.get(field, False), field)
+
+    for field in _OPTIONAL_BOOL_TEXT_FIELDS:
+        value = normalized.get(field)
+        if value in (None, ""):
+            result[field] = None
+        else:
+            result[field] = "true" if _parse_bool(value, field) else "false"
+
+    for field in _TEXT_FIELDS:
+        value = normalized.get(field)
+        if value in (None, ""):
+            result[field] = None
+            continue
+        text = str(value).strip()
+        max_length = 255 if field in {"username", "password"} else 2048
+        if len(text) > max_length or any(ord(char) < 32 for char in text):
+            raise ValueError(f"{field} is invalid")
+        result[field] = text
+
+    if data.get("clear_credentials") is True:
+        result["username"] = None
+        result["password"] = None
+    elif existing:
+        # The read API intentionally redacts secrets. Blank edit fields preserve
+        # existing listener credentials instead of silently disabling auth.
+        if data.get("username") in (None, ""):
+            result["username"] = existing.get("username")
+        if data.get("password") in (None, ""):
+            result["password"] = existing.get("password")
+
+    return result
+
+
+def _public_server_config(value):
+    data = dict(value or {})
+    had_credentials = bool(data.get("username") or data.get("password"))
+    data.pop("username", None)
+    data.pop("password", None)
+    data["has_auth"] = had_credentials
+    return data
 
 
 @server_bp.route("/api/server/log/stream", methods=["GET"])
@@ -48,7 +200,10 @@ def api_server_status():
         config = load_servers_config()
         servers = {}
         for port_key, conf in config.items():
-            port = str(port_key)
+            try:
+                port = str(_parse_port(port_key))
+            except ValueError:
+                continue
             try:
                 status = get_server_status(port)
                 servers[port] = status
@@ -56,13 +211,13 @@ def api_server_status():
                     conf["pid"] = None
                     save_servers_config(config)
                 servers[port]["protocol"] = conf.get("protocol", "http")
-                servers[port]["config"] = conf.get("config", {})
-            except Exception as e:
-                servers[port] = {"running": False, "error": str(e)}
+                servers[port]["config"] = _public_server_config(conf.get("config", {}))
+            except Exception:
+                servers[port] = {"running": False, "error": "Server status unavailable"}
         
         return jsonify({"servers": servers})
-    except Exception as e:
-        return jsonify({"error": str(e), "servers": {}})
+    except Exception:
+        return api_error("Could not read server status", 500, "server_status_failed")
 
 
 
@@ -75,9 +230,15 @@ def api_server_preview_candidates():
     from sqlalchemy import or_
     from database import db, Proxy
 
-    data = request.json or {}
+    data = _json_object()
+    if data is None:
+        return api_error("A JSON object is required", 400, "invalid_json")
+    try:
+        data = _normalize_server_config(data)
+    except ValueError as exc:
+        return api_error(str(exc), 400, "invalid_server_config")
     with db.session() as session:
-        query = session.query(Proxy)
+        query = apply_proxy_scope(session.query(Proxy))
 
         statuses = [x.strip() for x in str(data.get("candidate_statuses") or "alive").split(',') if x.strip()]
         if statuses:
@@ -130,7 +291,7 @@ def api_server_preview_candidates():
         for proto in ["http", "https", "socks4", "socks5"]:
             by_protocol[proto] = query.filter(Proxy.protocol == proto).count()
 
-        samples = [p.to_dict() for p in query.order_by(Proxy.cost.asc()).limit(5).all()]
+        samples = [public_proxy_dict(p) for p in query.order_by(Proxy.cost.asc()).limit(5).all()]
 
     warnings = []
     if total == 0:
@@ -148,30 +309,20 @@ def api_server_preview_candidates():
 @require_permission("server.control")
 def api_server_create():
     try:
-        data = request.json or {}
-        port = str(data.get("port", 8080))
-        
+        data = _json_object()
+        normalized = _normalize_server_config(data)
+        port = str(normalized["port"])
         config = load_servers_config()
-        
         if port in config:
-            return jsonify({"success": False, "error": f"A server on port {port} already exists"})
-        
-        config[port] = {
-            "pid": None,
-            "protocol": data.get("protocol", "http"),
-            "config": data
-        }
-        
+            return api_error(f"A server on port {port} already exists", 409, "duplicate_server")
+        config[port] = {"pid": None, "protocol": normalized["protocol"], "config": normalized}
         save_servers_config(config)
         log(f"Server profile created on port {port}")
-        
-        return jsonify({
-            "success": True,
-            "port": port,
-            "protocol": data.get("protocol", "http")
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+        return jsonify({"success": True, "port": port, "protocol": normalized["protocol"]}), 201
+    except ValueError as exc:
+        return api_error(str(exc), 400, "invalid_server_config")
+    except Exception:
+        return api_error("Could not create server profile", 500, "server_create_failed")
 
 
 @server_bp.route("/api/server/update", methods=["POST"])
@@ -179,68 +330,60 @@ def api_server_create():
 @require_permission("server.control")
 def api_server_update():
     try:
-        data = request.json or {}
-        port = str(data.get("port", 8080))
-        
+        data = _json_object()
+        if data is None:
+            return api_error("A JSON object is required", 400, "invalid_json")
+        port = str(_parse_port(data.get("port", 8080)))
         config = load_servers_config()
-        
         if port not in config:
-            return jsonify({"success": False, "error": f"No server profile on port {port}"})
-        
+            return api_error(f"No server profile on port {port}", 404, "not_found")
+
+        existing = config[port].get("config", {})
+        normalized = _normalize_server_config(data, existing=existing)
         pid = config[port].get("pid")
         was_running = False
         if pid:
             try:
                 was_running = psutil.pid_exists(int(pid))
-            except:
-                pass
-        
-        # Kill the running process if was running
+            except (TypeError, ValueError):
+                was_running = False
         if was_running:
-            old_pid = pid
-            if old_pid:
-                try:
-                    os.kill(int(old_pid), signal.SIGTERM)
-                    time.sleep(1)
-                    if psutil.pid_exists(old_pid):
-                        os.kill(int(old_pid), signal.SIGKILL)
-                except:
-                    pass
-        
-        config[port] = {
-            "pid": None,
-            "protocol": data.get("protocol", "http"),
-            "config": data
-        }
-        
+            try:
+                os.kill(int(pid), signal.SIGTERM)
+                time.sleep(1)
+                if psutil.pid_exists(int(pid)):
+                    os.kill(int(pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+        config[port] = {"pid": None, "protocol": normalized["protocol"], "config": normalized}
         save_servers_config(config)
         log(f"Server profile updated on port {port}")
-        
-        return jsonify({
-            "success": True,
-            "port": port,
-            "protocol": data.get("protocol", "http"),
-            "was_running": was_running
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+        return jsonify({"success": True, "port": port, "protocol": normalized["protocol"], "was_running": was_running})
+    except ValueError as exc:
+        return api_error(str(exc), 400, "invalid_server_config")
+    except Exception:
+        return api_error("Could not update server profile", 500, "server_update_failed")
 
 
 @server_bp.route("/api/server/start", methods=["POST"])
 @login_required
 @require_permission("server.control")
 def api_server_start():
-    data = request.json or {}
-    port = str(data.get("port", 8080))
-    
-    config = load_servers_config()
-    
-    existing_config = config.get(port, {}).get("config", {})
-    
-    if existing_config and not data.get("config"):
-        data = existing_config
-        data["port"] = int(port)
-    
+    data = _json_object()
+    if data is None:
+        return api_error("A JSON object is required", 400, "invalid_json")
+    try:
+        port = str(_parse_port(data.get("port", 8080)))
+        config = load_servers_config()
+        saved = config.get(port, {}).get("config", {})
+        source = saved if saved and not data.get("config") and set(data) <= {"port"} else data
+        normalized = _normalize_server_config(source, existing=saved or None)
+        normalized["port"] = int(port)
+        data = normalized
+    except ValueError as exc:
+        return api_error(str(exc), 400, "invalid_server_config")
+
     if port in config and config[port].get("pid"):
         pid = config[port]["pid"]
         try:
@@ -250,12 +393,10 @@ def api_server_start():
                 time.sleep(1)
                 if psutil.pid_exists(pid_int):
                     os.kill(pid_int, signal.SIGKILL)
-        except:
+        except (TypeError, ValueError, ProcessLookupError, PermissionError):
             pass
-    
-    if port in config:
-        del config[port]
-    
+
+    config.pop(port, None)
     save_servers_config(config)
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -355,19 +496,21 @@ def api_server_start():
             log(f"Server started on port {port} with PID {actual_pid}")
             return jsonify({"success": True, "pid": int(actual_pid), "port": port})
         return jsonify({"success": False, "error": f"Server exited immediately. Check {os.path.basename(log_file)}"})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+    except Exception:
+        return api_error("Could not start server", 500, "server_start_failed")
 
 
 @server_bp.route("/api/server/stop", methods=["POST"])
 @login_required
 @require_permission("server.control")
 def api_server_stop():
-    data = request.get_json() or {}
-    port = str(data.get("port")) if data.get("port") else None
-    
-    if not port:
-        return jsonify({"success": False, "error": "Port required"})
+    data = _json_object()
+    if data is None:
+        return api_error("A JSON object is required", 400, "invalid_json")
+    try:
+        port = str(_parse_port(data.get("port")))
+    except ValueError as exc:
+        return api_error(str(exc), 400, "invalid_server_config")
     
     config = load_servers_config()
     
@@ -379,24 +522,26 @@ def api_server_stop():
                 time.sleep(1)
                 if psutil.pid_exists(int(pid)):
                     os.kill(int(pid), signal.SIGKILL)
-            except Exception as e:
+            except Exception:
                 pass
         config[port]["pid"] = None
         save_servers_config(config)
         log(f"Server stopped on port {port}")
         return jsonify({"success": True, "port": port})
-    return jsonify({"success": False, "error": f"No server running on port {port}"})
+    return api_error(f"No server running on port {port}", 404, "not_found")
 
 
 @server_bp.route("/api/server/delete", methods=["POST"])
 @login_required
 @require_permission("server.control")
 def api_server_delete():
-    data = request.get_json() or {}
-    port = str(data.get("port")) if data.get("port") else None
-    
-    if not port:
-        return jsonify({"success": False, "error": "Port required"})
+    data = _json_object()
+    if data is None:
+        return api_error("A JSON object is required", 400, "invalid_json")
+    try:
+        port = str(_parse_port(data.get("port")))
+    except ValueError as exc:
+        return api_error(str(exc), 400, "invalid_server_config")
     
     config = load_servers_config()
     
@@ -405,21 +550,24 @@ def api_server_delete():
         if pid:
             try:
                 if psutil.pid_exists(int(pid)):
-                    return jsonify({"success": False, "error": "Server is running. Stop it first."})
-            except:
+                    return api_error("Server is running. Stop it first.", 409, "server_running")
+            except Exception:
                 pass
         del config[port]
         save_servers_config(config)
         log(f"Server profile deleted on port {port}")
         return jsonify({"success": True, "port": port})
-    return jsonify({"success": False, "error": f"No server profile on port {port}"})
+    return api_error(f"No server profile on port {port}", 404, "not_found")
 
 
 @server_bp.route("/api/server/log", methods=["GET"])
 @login_required
 @require_permission("server.view")
 def api_server_log():
-    port = request.args.get("port", "8080")
+    try:
+        port = str(_parse_port(request.args.get("port", "8080")))
+    except ValueError as exc:
+        return api_error(str(exc), 400, "invalid_server_config")
     base_dir = os.path.dirname(os.path.abspath(__file__))
     root_dir = os.path.dirname(os.path.dirname(base_dir))
     log_file = os.path.join(root_dir, f"server_{port}.log")

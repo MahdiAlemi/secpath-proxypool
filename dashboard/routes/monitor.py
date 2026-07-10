@@ -5,10 +5,13 @@ import signal
 import time
 import glob
 import psutil
+import re
+from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify
 
 from dashboard.decorators import login_required, require_permission
+from dashboard.security import api_error
 from dashboard.config import load_monitors_config, save_monitors_config
 from dashboard.utils.process import get_monitor_status
 from dashboard.utils.helpers import log
@@ -18,11 +21,17 @@ from database import db, MonitorSession, MonitorTested
 monitor_bp = Blueprint('monitor', __name__)
 
 
+_MONITOR_ID_RE = re.compile(r"^monitor_[a-z0-9_-]{1,80}$")
+
+
+def _valid_monitor_id(value):
+    return bool(_MONITOR_ID_RE.fullmatch(str(value or "")))
+
+
 @monitor_bp.route("/api/monitor", methods=["GET"])
 @login_required
 @require_permission("monitor.view")
 def api_monitor_status():
-    from datetime import datetime, timezone
     from proxy_monitor.utils.progress import read_progress
     
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -31,6 +40,8 @@ def api_monitor_status():
     config = load_monitors_config()
     monitors = {}
     for monitor_id, conf in config.items():
+        if not _valid_monitor_id(monitor_id):
+            continue
         try:
             status = get_monitor_status(monitor_id)
             is_running = status.get("running", False)
@@ -77,8 +88,8 @@ def api_monitor_status():
                 conf["pid"] = None
                 save_monitors_config(config)
                 monitors[monitor_id]["end_time"] = conf["end_time"]
-        except Exception as e:
-            monitors[monitor_id] = {"running": False, "error": str(e)}
+        except Exception:
+            monitors[monitor_id] = {"running": False, "error": "Monitor status unavailable"}
     return jsonify({"monitors": monitors})
 
 
@@ -87,7 +98,6 @@ def api_monitor_status():
 @require_permission("monitor.control")
 def api_monitor_create():
     try:
-        import re
         from sqlalchemy import or_
         from database import db, Proxy
         
@@ -160,8 +170,8 @@ def api_monitor_create():
             "proxy_count": proxy_count
         })
         
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+    except Exception:
+        return api_error("Could not create monitor profile", 500, "monitor_create_failed")
 
 
 @monitor_bp.route("/api/monitor/update", methods=["POST"])
@@ -169,7 +179,6 @@ def api_monitor_create():
 @require_permission("monitor.control")
 def api_monitor_update():
     try:
-        import re
         from sqlalchemy import or_
         from database import db, Proxy
         
@@ -267,8 +276,8 @@ def api_monitor_update():
             "proxy_count": proxy_count
         })
         
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+    except Exception:
+        return api_error("Could not update monitor profile", 500, "monitor_update_failed")
 
 
 @monitor_bp.route("/api/monitor/start", methods=["POST"])
@@ -276,7 +285,6 @@ def api_monitor_update():
 @require_permission("monitor.control")
 def api_monitor_start():
     try:
-        from datetime import datetime, timezone
         from sqlalchemy import or_
         from database import db, Proxy
         
@@ -440,20 +448,18 @@ WantedBy=multi-user.target
                         save_monitors_config(config)
                         log(f"Monitor started: {monitor_id} with PID {actual_pid}")
                         return jsonify({"success": True, "pid": int(actual_pid), "monitor_id": monitor_id})
-            except:
+            except Exception:
                 pass
         
-        return jsonify({"success": False, "error": "Failed to start monitor"})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+        return api_error("Failed to start monitor", 500, "monitor_start_failed")
+    except Exception:
+        return api_error("Could not start monitor", 500, "monitor_start_failed")
 
 
 @monitor_bp.route("/api/monitor/stop", methods=["POST"])
 @login_required
 @require_permission("monitor.control")
 def api_monitor_stop():
-    from datetime import datetime, timezone
-    
     data = request.json or {}
     monitor_id = data.get("monitor_id")
     
@@ -514,7 +520,7 @@ def api_monitor_stop():
         if pid:
             try:
                 os.kill(int(pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
         conf["pid"] = None
         conf["end_time"] = datetime.now(timezone.utc).isoformat()
@@ -527,7 +533,6 @@ def api_monitor_stop():
 @login_required
 @require_permission("monitor.control")
 def api_monitor_pause():
-    from datetime import datetime, timezone
     
     data = request.json or {}
     monitor_id = data.get("monitor_id")
@@ -571,7 +576,6 @@ def api_monitor_pause():
 @login_required
 @require_permission("monitor.control")
 def api_monitor_resume():
-    from datetime import datetime, timezone
     
     data = request.json or {}
     monitor_id = data.get("monitor_id")
@@ -590,8 +594,6 @@ def api_monitor_resume():
             return jsonify({"success": False, "error": "No paused session found for this monitor"})
     
     saved_config = config[monitor_id].get("config", {})
-    proxy_count = config[monitor_id].get("proxy_count", 0)
-    
     base_dir = os.path.dirname(os.path.abspath(__file__))
     root_dir = os.path.dirname(os.path.dirname(base_dir))
     monitor_path = os.path.join(root_dir, "proxy_monitor", "app.py")
@@ -679,8 +681,8 @@ def api_monitor_remove_service():
                 save_monitors_config(config)
                 log(f"Service {service_name} removed")
                 return jsonify({"success": True})
-            except Exception as e:
-                return jsonify({"success": False, "error": str(e)})
+            except Exception:
+                return api_error("Could not remove monitor service", 500, "service_remove_failed")
         return jsonify({"success": False, "error": "No service for this monitor"})
     return jsonify({"success": False, "error": "Monitor not found"})
 
@@ -702,7 +704,7 @@ def api_monitor_delete():
         if pid and psutil.pid_exists(int(pid)):
             try:
                 os.kill(int(pid), signal.SIGTERM)
-            except:
+            except Exception:
                 pass
         
         service_name = config[monitor_id].get("service")
@@ -714,7 +716,7 @@ def api_monitor_delete():
                 if os.path.exists(service_file):
                     os.remove(service_file)
                 subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
-            except:
+            except Exception:
                 pass
         
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -738,6 +740,8 @@ def api_monitor_delete():
 @require_permission("monitor.view")
 def api_monitor_log():
     monitor_id = request.args.get("monitor_id", "monitor_all")
+    if monitor_id != "monitor_all" and not _valid_monitor_id(monitor_id):
+        return api_error("Invalid monitor id", 400, "invalid_monitor_id")
     base_dir = os.path.dirname(os.path.abspath(__file__))
     root_dir = os.path.dirname(os.path.dirname(base_dir))
     log_file = os.path.join(root_dir, f"{monitor_id}.log")
@@ -754,6 +758,8 @@ def api_monitor_log():
 def api_monitor_log_stream():
     import time
     monitor_id = request.args.get("monitor_id", "monitor_all")
+    if monitor_id != "monitor_all" and not _valid_monitor_id(monitor_id):
+        return api_error("Invalid monitor id", 400, "invalid_monitor_id")
     base_dir = os.path.dirname(os.path.abspath(__file__))
     root_dir = os.path.dirname(os.path.dirname(base_dir))
     log_file = os.path.join(root_dir, f"{monitor_id}.log")

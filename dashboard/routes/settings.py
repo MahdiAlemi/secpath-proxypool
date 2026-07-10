@@ -3,15 +3,52 @@ import subprocess
 import tempfile
 import shutil
 import glob
+import sqlite3
 from datetime import datetime
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, current_app, request, jsonify, send_file, g, session as flask_session
 
 from dashboard.decorators import login_required, require_permission
+from dashboard.security import api_error
 from dashboard.config import USERS
 
 settings_bp = Blueprint('settings', __name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _sqlite_backup(source_path, destination_path):
+    """Create a transactionally consistent SQLite backup."""
+    source = sqlite3.connect(f"file:{source_path}?mode=ro", uri=True)
+    destination = sqlite3.connect(destination_path)
+    try:
+        with destination:
+            source.backup(destination)
+    finally:
+        destination.close()
+        source.close()
+
+
+def _validate_sqlite_backup(path):
+    if os.path.getsize(path) < 100 or os.path.getsize(path) > 512 * 1024 * 1024:
+        raise ValueError("SQLite backup size is invalid")
+    with open(path, "rb") as handle:
+        if handle.read(16) != b"SQLite format 3\x00":
+            raise ValueError("Uploaded file is not a SQLite database")
+    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        integrity = connection.execute("PRAGMA integrity_check").fetchone()
+        if not integrity or integrity[0] != "ok":
+            raise ValueError("SQLite backup failed integrity validation")
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        if "proxies" not in tables:
+            raise ValueError("SQLite backup does not contain the proxies table")
+    finally:
+        connection.close()
 
 
 @settings_bp.route("/api/settings", methods=["GET"])
@@ -118,13 +155,34 @@ def api_settings_diagnostics():
 @login_required
 @require_permission("settings.edit")
 def api_settings_password():
-    from dashboard.config import USERS
-    data = request.json
-    new_pass = data.get("password", "")
-    if new_pass:
-        USERS["admin"] = new_pass
-        return jsonify({"success": True, "warning": "Password changed for this running process only. Set DASHBOARD_PASSWORD in .env for persistence."})
-    return jsonify({"success": False, "error": "Password required"})
+    import bcrypt
+    from database import Token, User, db
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return api_error("A JSON object is required", 400, "invalid_json")
+    new_password = str(data.get("password", ""))
+    if len(new_password) < 12:
+        return api_error("Password must be at least 12 characters", 400, "weak_password")
+
+    user_id = g.get("user_id", flask_session.get("user_id"))
+    if not user_id:
+        return api_error(
+            "The environment-backed administrator cannot be changed at runtime; update DASHBOARD_PASSWORD or create a database administrator",
+            409,
+            "legacy_account",
+        )
+
+    with db.session() as db_session:
+        user = db_session.query(User).filter_by(id=user_id, is_active=True).first()
+        if not user:
+            return api_error("User not found", 404, "not_found")
+        user.password_hash = bcrypt.hashpw(
+            new_password.encode("utf-8"), bcrypt.gensalt()
+        ).decode("utf-8")
+        db_session.query(Token).filter_by(user_id=user_id).delete()
+        db_session.commit()
+    return jsonify({"success": True})
 
 
 @settings_bp.route("/api/settings/backup", methods=["POST"])
@@ -142,9 +200,9 @@ def api_settings_backup():
             if not os.path.isabs(sqlite_path):
                 sqlite_path = os.path.join(BASE_DIR, sqlite_path)
             if not os.path.exists(sqlite_path):
-                return jsonify({"success": False, "error": f"SQLite DB not found: {sqlite_path}"})
+                return api_error("SQLite database file was not found", 404, "not_found")
             backup_name = os.path.join(BASE_DIR, f"proxies_backup_{timestamp}.sqlite")
-            shutil.copy2(sqlite_path, backup_name)
+            _sqlite_backup(sqlite_path, backup_name)
         else:
             db_name = os.getenv('DB_NAME', 'proxypool')
             db_user = os.getenv('DB_USER', 'proxypool')
@@ -164,21 +222,21 @@ def api_settings_backup():
             "file": os.path.basename(backup_name),
             "size_mb": os.path.getsize(backup_name) / 1024 / 1024
         })
-    except subprocess.CalledProcessError as e:
-        return jsonify({"success": False, "error": f"Backup failed: {str(e)}"})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+    except subprocess.CalledProcessError:
+        current_app.logger.exception("Database backup command failed")
+        return api_error("Database backup failed", 500, "backup_failed")
+    except Exception:
+        current_app.logger.exception("Database backup failed")
+        return api_error("Database backup failed", 500, "backup_failed")
 
 
 @settings_bp.route("/api/settings/backup/download", methods=["GET"])
 @login_required
-@require_permission("settings.view")
+@require_permission("settings.edit", "proxies.credentials")
 def api_settings_backup_download():
-    import glob
-    
     backups = sorted(glob.glob(os.path.join(BASE_DIR, "proxies_backup_*.sql")) + glob.glob(os.path.join(BASE_DIR, "proxies_backup_*.sqlite")), reverse=True)
     if not backups:
-        return jsonify({"success": False, "error": "No backups found"})
+        return api_error("No backups found", 404, "not_found")
     
     latest = backups[0]
     return send_file(latest, as_attachment=True, download_name=os.path.basename(latest))
@@ -188,8 +246,6 @@ def api_settings_backup_download():
 @login_required
 @require_permission("settings.view")
 def api_settings_backups():
-    import glob
-    
     backups = sorted(glob.glob(os.path.join(BASE_DIR, "proxies_backup_*.sql")) + glob.glob(os.path.join(BASE_DIR, "proxies_backup_*.sqlite")), reverse=True)
     result = []
     for b in backups:
@@ -203,37 +259,55 @@ def api_settings_backups():
 
 @settings_bp.route("/api/settings/import", methods=["POST"])
 @login_required
-@require_permission("settings.edit")
+@require_permission("settings.edit", "proxies.credentials")
 def api_settings_import():
     from config import config
 
     db_type = config.DB_TYPE.lower()
     mode = request.form.get("mode", "append")
+    if mode not in {"append", "replace"}:
+        return api_error("mode must be append or replace", 400, "invalid_mode")
 
-    if 'file' not in request.files:
-        return jsonify({"success": False, "error": "No file provided"})
+    if "file" not in request.files:
+        return api_error("No file provided", 400, "missing_file")
 
     file = request.files['file']
-    filename = file.filename or ''
+    filename = (file.filename or "").lower()
 
     try:
         if db_type == 'sqlite':
             # For SQLite, only full DB-file replacement is supported. This avoids executing arbitrary SQL uploads.
             if not filename.endswith('.sqlite'):
-                return jsonify({"success": False, "error": "SQLite import only accepts .sqlite backup files"})
+                return api_error("SQLite import only accepts .sqlite backup files", 400, "invalid_backup")
             if mode != "replace":
-                return jsonify({"success": False, "error": "SQLite import supports replace mode only"})
+                return api_error("SQLite import supports replace mode only", 400, "invalid_mode")
             sqlite_path = config.SQLITE_DB_PATH
             if not os.path.isabs(sqlite_path):
                 sqlite_path = os.path.join(BASE_DIR, sqlite_path)
             backup_name = os.path.join(BASE_DIR, f"proxies_backup_before_import_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sqlite")
-            if os.path.exists(sqlite_path):
-                shutil.copy2(sqlite_path, backup_name)
-            file.save(sqlite_path)
+            staged_path = None
+            with tempfile.NamedTemporaryFile(dir=BASE_DIR, suffix=".sqlite", delete=False) as staged:
+                staged_path = staged.name
+            try:
+                file.save(staged_path)
+                _validate_sqlite_backup(staged_path)
+                if os.path.exists(sqlite_path):
+                    _sqlite_backup(sqlite_path, backup_name)
+                from database import db, ensure_db_schema
+                if getattr(db, "Session", None) is not None:
+                    db.Session.remove()
+                if getattr(db, "engine", None) is not None:
+                    db.engine.dispose()
+                os.replace(staged_path, sqlite_path)
+                staged_path = None
+                ensure_db_schema()
+            finally:
+                if staged_path and os.path.exists(staged_path):
+                    os.unlink(staged_path)
             return jsonify({"success": True, "mode": mode, "backup": os.path.basename(backup_name)})
 
         if not filename.endswith('.sql'):
-            return jsonify({"success": False, "error": "MySQL import only accepts .sql files"})
+            return api_error("MySQL import only accepts .sql files", 400, "invalid_backup")
 
         db_name = os.getenv('DB_NAME', 'proxypool')
         db_user = os.getenv('DB_USER', 'proxypool')
@@ -267,7 +341,8 @@ def api_settings_import():
                     env=env
                 )
             if result.returncode != 0:
-                return jsonify({"success": False, "error": f"Import failed: {result.stderr}"})
+                current_app.logger.error("MySQL import failed: %s", result.stderr[-2000:])
+                return api_error("Database import failed", 500, "database_import_failed")
         finally:
             try:
                 os.unlink(tmp_path)
@@ -276,10 +351,14 @@ def api_settings_import():
 
         return jsonify({"success": True, "mode": mode, "backup": os.path.basename(backup_name)})
 
-    except subprocess.CalledProcessError as e:
-        return jsonify({"success": False, "error": f"Import failed: {str(e)}"})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+    except (ValueError, sqlite3.DatabaseError) as exc:
+        return api_error(str(exc), 400, "invalid_backup")
+    except subprocess.CalledProcessError:
+        current_app.logger.exception("Database import command failed")
+        return api_error("Database import failed", 500, "database_import_failed")
+    except Exception:
+        current_app.logger.exception("Database import failed")
+        return api_error("Database import failed", 500, "database_import_failed")
 
 
 

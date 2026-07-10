@@ -1,4 +1,5 @@
 import os
+import secrets
 from datetime import datetime, timezone
 from time import monotonic
 
@@ -15,6 +16,13 @@ from flask import (
 )
 
 from dashboard.decorators import login_required
+from dashboard.security import (
+    api_error,
+    clear_rate_limit,
+    init_security,
+    rate_limited,
+    record_rate_limit_hit,
+)
 from database import db, ensure_db_schema
 
 
@@ -26,16 +34,27 @@ def create_app():
     template_dir = os.path.join(os.path.dirname(__file__), "templates")
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
-    app.secret_key = os.environ.get(
-        "FLASK_SECRET_KEY",
-        os.environ.get("SECRET_KEY", os.urandom(32).hex()),
-    )
+    configured_secret = os.environ.get("FLASK_SECRET_KEY") or os.environ.get("SECRET_KEY")
+    app.secret_key = configured_secret or secrets.token_hex(32)
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=os.environ.get("SESSION_COOKIE_SECURE", "false").lower()
         in {"1", "true", "yes", "on"},
+        MAX_CONTENT_LENGTH=max(64 * 1024, int(os.environ.get("MAX_REQUEST_BYTES", str(4 * 1024 * 1024)))),
     )
+    if not configured_secret:
+        app.logger.warning(
+            "FLASK_SECRET_KEY is not configured; browser sessions will reset on restart. "
+            "Set a random secret in .env before regular use."
+        )
+    if not os.environ.get("JWT_SECRET"):
+        app.logger.warning(
+            "JWT_SECRET is not configured; API tokens will reset on restart. "
+            "Set an independent random secret in .env before regular use."
+        )
+
+    init_security(app)
 
     # A brand-new SQLite/MySQL database must be usable on first startup.
     ensure_db_schema()
@@ -98,6 +117,10 @@ def create_app():
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "POST":
+            if rate_limited("browser-login", limit=10, window_seconds=300):
+                flash("Too many failed sign-in attempts. Try again later.", "error")
+                return render_template("login.html"), 429
+
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
 
@@ -112,32 +135,42 @@ def create_app():
                 ):
                     user.last_login = _utcnow_naive()
                     db_session.commit()
+                    session.clear()
                     session["user"] = user.username
                     session["user_id"] = user.id
-                    create_token(user.id)
+                    clear_rate_limit("browser-login")
                     return redirect(url_for("index"))
 
                 if username in USERS and USERS[username] == password:
+                    session.clear()
                     session["user"] = username
                     session["user_id"] = 0
+                    clear_rate_limit("browser-login")
                     return redirect(url_for("index"))
 
-                flash("Invalid credentials", "error")
-        return render_template("login.html")
+            record_rate_limit_hit("browser-login")
+            flash("Invalid credentials", "error")
 
-    @app.route("/logout")
+        return render_template("login.html", auth_configured=bool(USERS))
+
+    @app.route("/logout", methods=["POST"])
+    @login_required
     def logout():
         user_id = session.get("user_id")
         if user_id and user_id > 0:
             delete_user_tokens(user_id)
-        session.pop("user", None)
-        session.pop("user_id", None)
+        session.clear()
         return redirect(url_for("login"))
 
     @app.route("/api/login", methods=["POST"])
     def api_login():
-        """API login that returns a JWT token for database-backed users."""
-        data = request.get_json(silent=True) or {}
+        """Return a JWT for non-browser API clients."""
+        if rate_limited("api-login", limit=10, window_seconds=300):
+            return api_error("Too many failed sign-in attempts", 429, "rate_limited")
+
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return api_error("A JSON object is required", 400, "invalid_json")
         username = str(data.get("username", "")).strip()
         password = str(data.get("password", ""))
 
@@ -153,20 +186,13 @@ def create_app():
                 user.last_login = _utcnow_naive()
                 db_session.commit()
                 token = create_token(user.id)
+                clear_rate_limit("api-login")
                 return jsonify(
                     {"success": True, "token": token, "user": user.to_dict()}
                 )
 
-            if username in USERS and USERS[username] == password:
-                return jsonify(
-                    {
-                        "success": True,
-                        "token": None,
-                        "user": {"username": username, "role": "admin"},
-                    }
-                )
-
-        return jsonify({"success": False, "error": "Invalid credentials"}), 401
+        record_rate_limit_hit("api-login")
+        return api_error("Invalid credentials", 401, "invalid_credentials")
 
     @app.route("/")
     @app.route("/index")

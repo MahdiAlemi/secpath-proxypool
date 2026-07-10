@@ -1,39 +1,35 @@
-if (localStorage.getItem('token')) {
-  window.location.href = '/';
-}
-async function doLogin(e) {
-  e.preventDefault();
-  const username = document.querySelector('input[name="username"]').value;
-  const password = document.querySelector('input[name="password"]').value;
-  const btn = document.querySelector('button');
-  btn.disabled = true;
-  btn.textContent = 'Loading...';
+localStorage.removeItem('token');
+
+async function doLogin(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('button[type="submit"]');
+  const errorBox = document.querySelector('.error');
+  button.disabled = true;
+  button.textContent = 'Signing in...';
+
   try {
-    const res = await fetch('/login', {
+    const response = await fetch('/login', {
       method: 'POST',
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: 'username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password),
-      credentials: 'include'
+      body: new URLSearchParams(new FormData(form)).toString(),
+      credentials: 'same-origin',
+      redirect: 'follow'
     });
-    if (res.ok || res.redirected) {
-      const tokenRes = await fetch('/api/login', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({username, password})
-      });
-      const data = await tokenRes.json();
-      if (data.success && data.token) {
-        localStorage.setItem('token', data.token);
-      }
-      window.location.href = res.url || '/';
-    } else {
-      document.querySelector('.error').textContent = 'Invalid credentials';
-      btn.disabled = false;
-      btn.textContent = 'Sign in';
+
+    if (response.ok && response.url && !response.url.endsWith('/login')) {
+      window.location.assign(response.url);
+      return;
     }
-  } catch(err) {
-    document.querySelector('.error').textContent = 'Login failed';
-    btn.disabled = false;
-    btn.textContent = 'Sign in';
+    errorBox.textContent = response.status === 429
+      ? 'Too many failed attempts. Try again later.'
+      : 'Invalid credentials or expired form. Refresh and try again.';
+    errorBox.style.display = 'block';
+  } catch (_error) {
+    errorBox.textContent = 'Login failed';
+    errorBox.style.display = 'block';
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Sign in';
   }
 }

@@ -1,296 +1,365 @@
-import os
-import subprocess
-import tempfile
-import sys
+import csv
+import io
+from typing import Iterable
 
-from flask import Blueprint, request, jsonify
+import requests
+from flask import Blueprint, Response, g, jsonify, request
+from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 
-from dashboard.decorators import login_required, require_permission
+from dashboard.config import PROTOCOLS
+from dashboard.decorators import has_permission, login_required, require_permission
+from dashboard.proxy_scope import (
+    SAFE_FILTER_COLUMNS,
+    apply_proxy_scope,
+    credential_proxy_dict,
+    public_proxy_dict,
+)
+from dashboard.security import api_error, resolve_public_http_url, validate_public_peer
+from database import Proxy
+from proxy_importer.utils.importer import normalize_proxy_line
 
-import_export_bp = Blueprint('import_export', __name__)
+import_export_bp = Blueprint("import_export", __name__)
+
+_MAX_SOURCE_BYTES = 2_000_000
+_MAX_SOURCE_URLS = 100
+_MAX_IMPORT_LINES = 100_000
 
 
 def get_db():
-    from flask import g
     if "db_session" not in g:
         from database import db
+
         g.db_session = db.get_session()
     return g.db_session
+
+
+def _json_object():
+    value = request.get_json(silent=True)
+    return value if isinstance(value, dict) else None
+
+
+def _response_peer_ip(response) -> str:
+    """Best-effort extraction of the connected socket peer from requests/urllib3."""
+    raw = response.raw
+    connections = [
+        getattr(raw, "_connection", None),
+        getattr(raw, "connection", None),
+    ]
+    for connection in connections:
+        sock = getattr(connection, "sock", None)
+        if sock is not None:
+            return sock.getpeername()[0]
+
+    # urllib3 may hand the socket through the wrapped http.client response.
+    wrapped = getattr(getattr(getattr(raw, "_fp", None), "fp", None), "raw", None)
+    sock = getattr(wrapped, "_sock", None)
+    if sock is not None:
+        return sock.getpeername()[0]
+    raise ValueError("Could not verify the source connection peer")
+
+
+def _fetch_public_text(url: str) -> str:
+    safe_url, resolved_ips = resolve_public_http_url(url)
+    client = requests.Session()
+    client.trust_env = False  # Ignore ambient HTTP(S)_PROXY values for SSRF checks.
+    response = None
+    try:
+        response = client.get(
+            safe_url,
+            timeout=(5, 20),
+            allow_redirects=False,
+            stream=True,
+            headers={"User-Agent": "ProxyPool-SourceFetcher/1.0"},
+        )
+        validate_public_peer(_response_peer_ip(response), resolved_ips)
+        if 300 <= response.status_code < 400:
+            raise ValueError("Source redirects are blocked; use the final public URL")
+        response.raise_for_status()
+
+        content_length = response.headers.get("Content-Length")
+        if content_length:
+            try:
+                declared_size = int(content_length)
+            except (TypeError, ValueError):
+                declared_size = None
+            if declared_size is not None and declared_size > _MAX_SOURCE_BYTES:
+                raise ValueError("Source response is larger than 2 MB")
+
+        chunks = []
+        size = 0
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            size += len(chunk)
+            if size > _MAX_SOURCE_BYTES:
+                raise ValueError("Source response is larger than 2 MB")
+            chunks.append(chunk)
+        encoding = response.encoding or "utf-8"
+        return b"".join(chunks).decode(encoding, errors="replace")
+    finally:
+        if response is not None:
+            response.close()
+        client.close()
+
+
+def _parse_link_config(content: str) -> list[tuple[str, str]]:
+    protocol = None
+    sources = []
+    for raw in content.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith(";"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            candidate = line[1:-1].strip().lower()
+            protocol = candidate if candidate in PROTOCOLS else None
+            continue
+        if protocol:
+            sources.append((protocol, line))
+            if len(sources) > _MAX_SOURCE_URLS:
+                raise ValueError(f"At most {_MAX_SOURCE_URLS} source URLs are allowed")
+    return sources
+
+
+def _proxy_payload(line: str, default_protocol: str):
+    parsed = normalize_proxy_line(line, default_protocol)
+    if not parsed:
+        return None
+    protocol, host, port, username, password = parsed
+    protocol = str(protocol or "").lower()
+    host = str(host or "").strip()
+    if protocol not in PROTOCOLS or not host or len(host) > 255:
+        return None
+    if any(char.isspace() for char in host):
+        return None
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        return None
+    if not 1 <= port <= 65535:
+        return None
+    username = str(username or "")
+    password = str(password or "")
+    if len(username) > 255 or len(password) > 255:
+        return None
+    return {
+        "protocol": protocol,
+        "ip": host,
+        "port": port,
+        "username": username,
+        "password": password,
+    }
+
+
+def _import_lines(db_session, protocol: str, lines: Iterable[str]):
+    added = 0
+    skipped = 0
+    seen = set()
+    for index, raw in enumerate(lines):
+        if index >= _MAX_IMPORT_LINES:
+            skipped += 1
+            break
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        payload = _proxy_payload(line, protocol)
+        if not payload:
+            skipped += 1
+            continue
+        key = tuple(payload[field] for field in ("protocol", "ip", "port", "username", "password"))
+        if key in seen:
+            skipped += 1
+            continue
+        seen.add(key)
+        exists = db_session.query(Proxy.id).filter_by(**payload).first()
+        if exists:
+            skipped += 1
+            continue
+        db_session.add(Proxy(**payload, cost=1.0))
+        added += 1
+    return added, skipped
+
+
+def _apply_export_filters(query):
+    proto = request.args.get("proto", "all")
+    status = request.args.get("status", "all")
+    search = request.args.get("search", "").strip()[:255]
+    ip_filter = request.args.get("ip", "").strip()[:255]
+    country_filter = request.args.get("country", "").strip()[:32]
+    isp_filter = request.args.get("isp", "").strip()[:255]
+
+    if proto != "all" and proto in PROTOCOLS:
+        query = query.filter(Proxy.protocol == proto)
+    if status != "all":
+        if status == "untested":
+            query = query.filter(or_(Proxy.status == "untested", Proxy.status.is_(None)))
+        else:
+            query = query.filter(Proxy.status == status)
+    if search:
+        value = f"%{search}%"
+        query = query.filter(
+            or_(
+                Proxy.ip.like(value),
+                Proxy.countryCode.like(value),
+                Proxy.isp.like(value),
+                Proxy.city.like(value),
+                Proxy.regionName.like(value),
+            )
+        )
+    if ip_filter:
+        query = query.filter(Proxy.ip.like(f"%{ip_filter}%"))
+    if country_filter:
+        query = query.filter(Proxy.countryCode.like(f"%{country_filter}%"))
+    if isp_filter:
+        query = query.filter(Proxy.isp.like(f"%{isp_filter}%"))
+    return query
+
+
+def _csv_value(value):
+    if value is None:
+        return ""
+    text = str(value)
+    if text.startswith(("=", "+", "-", "@")):
+        return "'" + text
+    return text
 
 
 @import_export_bp.route("/api/import", methods=["POST"])
 @login_required
 @require_permission("proxies.import")
 def api_import():
-    from sqlalchemy import or_
-    from database import Proxy
-    
-    mode = request.json.get("mode")
-    session = get_db()
+    data = _json_object()
+    if data is None:
+        return api_error("A JSON object is required", 400, "invalid_json")
+    mode = str(data.get("mode", ""))
+    db_session = get_db()
 
-    result = {"success": True, "added": 0, "skipped": 0, "message": ""}
+    try:
+        if mode == "manual":
+            content = str(data.get("proxies", ""))
+            if len(content.encode("utf-8")) > _MAX_SOURCE_BYTES:
+                return api_error("Manual import is larger than 2 MB", 413, "payload_too_large")
+            added, skipped = _import_lines(db_session, "http", content.splitlines())
+        elif mode == "url":
+            protocol = str(data.get("protocol", "http")).lower()
+            if protocol not in PROTOCOLS:
+                return api_error("Invalid protocol", 400, "invalid_protocol")
+            text = _fetch_public_text(str(data.get("url", "")))
+            added, skipped = _import_lines(db_session, protocol, text.splitlines())
+        elif mode == "links":
+            content = str(data.get("content", ""))
+            if len(content.encode("utf-8")) > 128_000:
+                return api_error("Source configuration is too large", 413, "payload_too_large")
+            sources = _parse_link_config(content)
+            if not sources:
+                return api_error("No valid source URLs found", 400, "invalid_sources")
+            added = skipped = 0
+            for protocol, url in sources:
+                text = _fetch_public_text(url)
+                source_added, source_skipped = _import_lines(db_session, protocol, text.splitlines())
+                added += source_added
+                skipped += source_skipped
+        else:
+            return api_error("mode must be manual, url, or links", 400, "invalid_mode")
 
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    importer_path = os.path.join(base_dir, "proxy_importer", "app.py")
-
-    if mode == "links":
-        content = request.json.get("content", "")
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
-            f.write(content)
-            temp_file = f.name
-        try:
-            proc = subprocess.run(
-                [sys.executable, importer_path, "--mode", "links", "--file", temp_file],
-                capture_output=True, text=True, timeout=120
-            )
-            output = proc.stdout + proc.stderr
-            result["message"] = output
-            # Parse added/skipped from importer output
-            import re
-            match = re.search(r'Added (\d+).*Skipped (\d+)', output)
-            if match:
-                result["added"] = int(match.group(1))
-                result["skipped"] = int(match.group(2))
-            else:
-                # Try alternative format
-                match = re.search(r'Added (\d+) new proxies', output)
-                if match:
-                    result["added"] = int(match.group(1))
-        except Exception as e:
-            result["success"] = False
-            result["message"] = str(e)
-        finally:
-            os.unlink(temp_file)
-
-    elif mode == "url":
-        url = request.json.get("url")
-        proto = request.json.get("protocol", "http")
-        content = f"[{proto}]\n{url}"
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
-            f.write(content)
-            temp_file = f.name
-        try:
-            proc = subprocess.run(
-                [sys.executable, importer_path, "--mode", "links", "--file", temp_file],
-                capture_output=True, text=True, timeout=60
-            )
-            output = proc.stdout
-            result["message"] = output
-            # Parse added/skipped from importer output
-            import re
-            match = re.search(r'Added (\d+).*Skipped (\d+)', output)
-            if match:
-                result["added"] = int(match.group(1))
-                result["skipped"] = int(match.group(2))
-            else:
-                match = re.search(r'Added (\d+) new proxies', output)
-                if match:
-                    result["added"] = int(match.group(1))
-        except Exception as e:
-            result["success"] = False
-            result["message"] = str(e)
-        finally:
-            os.unlink(temp_file)
-
-    elif mode == "manual":
-        proxies = request.json.get("proxies", "")
-        lines = proxies.strip().split("\n")
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = line.split()
-            if len(parts) >= 3:
-                proto, ip, port = parts[0], parts[1], parts[2]
-                user = parts[3] if len(parts) > 3 else ""
-                pwd = parts[4] if len(parts) > 4 else ""
-                try:
-                    existing = session.query(Proxy).filter_by(
-                        protocol=proto, ip=ip, port=int(port), username=user, password=pwd
-                    ).first()
-                    if not existing:
-                        proxy = Proxy(protocol=proto, ip=ip, port=int(port), username=user, password=pwd, cost=1.0)
-                        session.add(proxy)
-                        result["added"] += 1
-                except:
-                    result["skipped"] += 1
-        session.commit()
-
-    return jsonify(result)
+        db_session.commit()
+        return jsonify({"success": True, "added": added, "skipped": skipped})
+    except IntegrityError:
+        db_session.rollback()
+        return api_error("Import contained conflicting rows", 409, "duplicate_proxy")
+    except (requests.RequestException, ValueError) as exc:
+        db_session.rollback()
+        return api_error(str(exc), 400, "source_fetch_failed")
+    except Exception:
+        db_session.rollback()
+        return api_error("Import failed", 500, "import_failed")
 
 
 @import_export_bp.route("/api/import/count-url", methods=["POST"])
 @login_required
 @require_permission("proxies.import")
 def api_import_count_url():
-    """Count proxies in a URL without importing"""
-    import requests
-    from urllib.parse import urlparse
-    
-    url = request.json.get("url", "")
-    proto = request.json.get("protocol", "http")
-    
-    if not url:
-        return jsonify({"success": False, "error": "URL required", "count": 0})
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        return jsonify({"success": False, "error": "Only http/https URLs are allowed", "count": 0})
-    
+    data = _json_object()
+    if data is None:
+        return api_error("A JSON object is required", 400, "invalid_json")
+    protocol = str(data.get("protocol", "http")).lower()
+    if protocol not in PROTOCOLS:
+        return api_error("Invalid protocol", 400, "invalid_protocol")
     try:
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        content = response.text[:2_000_000]
-        
-        lines = content.strip().split("\n")
-        count = 0
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if proto in ['http', 'https']:
-                if '://' in line or '.' in line:
-                    count += 1
-            else:
-                if '://' in line or '.' in line:
-                    count += 1
-        
+        text = _fetch_public_text(str(data.get("url", "")))
+        count = sum(
+            1
+            for index, line in enumerate(text.splitlines())
+            if index < _MAX_IMPORT_LINES and _proxy_payload(line.strip(), protocol)
+        )
         return jsonify({"success": True, "count": count})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e), "count": 0})
+    except (requests.RequestException, ValueError) as exc:
+        return api_error(str(exc), 400, "source_fetch_failed")
+    except Exception:
+        return api_error("Could not inspect source", 500, "source_fetch_failed")
 
 
 @import_export_bp.route("/api/export", methods=["GET"])
 @login_required
 @require_permission("proxies.export")
 def api_export():
-    from sqlalchemy import or_
-    from database import Proxy
-    
-    fmt = request.args.get("format", "txt")
-    cols_param = request.args.get("columns", "")
-    proto = request.args.get("proto", "all")
-    status = request.args.get("status", "all")
-    search = request.args.get("search", "")
-    ip_filter = request.args.get("ip", "")
-    country_filter = request.args.get("country", "")
-    isp_filter = request.args.get("isp", "")
-    adv_search_json = request.args.get("adv_search", "[]")
-    
-    session = get_db()
-    
-    query = session.query(Proxy)
-    
-    if proto != "all":
-        query = query.filter(Proxy.protocol == proto)
-    
-    if status != "all":
-        if status == "untested":
-            query = query.filter(or_(Proxy.status == 'untested', Proxy.status.is_(None)))
-        else:
-            query = query.filter(Proxy.status == status)
-    
-    if search:
-        search_term = f"%{search}%"
-        query = query.filter(or_(
-            Proxy.ip.like(search_term),
-            Proxy.countryCode.like(search_term),
-            Proxy.isp.like(search_term),
-            Proxy.city.like(search_term),
-            Proxy.regionName.like(search_term)
-        ))
-    
-    if ip_filter:
-        query = query.filter(Proxy.ip.like(f"%{ip_filter}%"))
-    
-    if country_filter:
-        query = query.filter(Proxy.countryCode.like(f"%{country_filter}%"))
-    
-    if isp_filter:
-        query = query.filter(Proxy.isp.like(f"%{isp_filter}%"))
-    
-    import json
-    try:
-        adv_rules = json.loads(adv_search_json)
-        for rule in adv_rules:
-            col = rule.get('column', '')
-            op = rule.get('operator', 'contains')
-            val = rule.get('value', '')
-            if not col or not val:
-                continue
-            column = getattr(Proxy, col, None)
-            if column is None:
-                continue
-            if op == 'contains':
-                query = query.filter(column.like(f"%{val}%"))
-            elif op == 'equals':
-                query = query.filter(column == val)
-            elif op == 'starts':
-                query = query.filter(column.like(f"{val}%"))
-            elif op == 'gt':
-                query = query.filter(column > val)
-            elif op == 'lt':
-                query = query.filter(column < val)
-            elif op == 'gte':
-                query = query.filter(column >= val)
-            elif op == 'lte':
-                query = query.filter(column <= val)
-    except:
-        pass
-    
-    proxies = query.all()
-    
-    if cols_param:
-        cols = [c.strip() for c in cols_param.split(',') if c.strip()]
-        col_map = {
-            'protocol': 'protocol', 'port': 'port', 'cost': 'cost', 'speed': 'speed_ms',
-            'alive': 'alive_hits', 'fails': 'fail_hits', 'country': 'countryCode',
-            'region': 'regionName', 'city': 'city', 'isp': 'isp', 'asn': 'asn',
-            'org': 'org', 'mobile': 'mobile', 'hosting': 'hosting',
-            'lastalive': 'last_alive', 'lastcheck': 'last_checked'
-        }
-        selected_cols = ['ip'] + [col_map.get(c, c) for c in cols if c in col_map]
-    else:
-        selected_cols = None
+    fmt = request.args.get("format", "txt").lower()
+    if fmt not in {"txt", "csv", "json"}:
+        return api_error("format must be txt, csv, or json", 400, "invalid_format")
+
+    include_credentials = request.args.get("include_credentials", "false").lower() in {"1", "true", "yes"}
+    if include_credentials and not has_permission("proxies.credentials"):
+        return api_error("Credential export requires proxies.credentials", 403, "permission_denied")
+
+    db_session = get_db()
+    rows = _apply_export_filters(apply_proxy_scope(db_session.query(Proxy))).all()
+    serializer = credential_proxy_dict if include_credentials else public_proxy_dict
+
+    requested = [item.strip() for item in request.args.get("columns", "").split(",") if item.strip()]
+    column_map = {
+        "protocol": "protocol",
+        "port": "port",
+        "cost": "cost",
+        "speed": "speed_ms",
+        "alive": "alive_hits",
+        "fails": "fail_hits",
+        "country": "countryCode",
+        "region": "regionName",
+        "city": "city",
+        "isp": "isp",
+        "asn": "asn",
+        "org": "org",
+        "mobile": "mobile",
+        "hosting": "hosting",
+        "lastalive": "last_alive",
+        "lastcheck": "last_checked",
+    }
+    selected = ["ip"] + [column_map[item] for item in requested if item in column_map] if requested else None
+
+    data = []
+    for proxy in rows:
+        item = serializer(proxy)
+        if selected:
+            item = {key: item.get(key) for key in selected if key in SAFE_FILTER_COLUMNS or key == "ip"}
+        if include_credentials and proxy.username and proxy.password:
+            item["proxy_url"] = f"{proxy.protocol}://{proxy.username}:{proxy.password}@{proxy.ip}:{proxy.port}"
+        data.append(item)
 
     if fmt == "json":
-        data = []
-        for p in proxies:
-            obj = p.to_dict()
-            if selected_cols:
-                obj = {k: v for k, v in obj.items() if k in selected_cols}
-            username = str(p.username) if p.username is not None else ""
-            password = str(p.password) if p.password is not None else ""
-            if username and password:
-                obj['proxy_url'] = f"{p.protocol}://{username}:{password}@{p.ip}:{p.port}"
-            data.append(obj)
-        return jsonify(data)
+        return jsonify({"success": True, "count": len(data), "proxies": data})
 
-    lines = []
-    first = True
-    
-    for p in proxies:
-        row_dict = p.to_dict()
-        
-        if selected_cols:
-            row_dict = {k: v for k, v in row_dict.items() if k in selected_cols}
-        
-        cols_list = list(row_dict.keys())
-        
-        if first and fmt == "csv":
-            lines.append(','.join(cols_list))
-            first = False
-        
-        vals = []
-        for c in cols_list:
-            val = row_dict.get(c, '')
-            if val is None:
-                val = ''
-            else:
-                val = str(val)
-                if ',' in val or '"' in val or '\n' in val:
-                    val = '"' + val.replace('"', '""') + '"'
-            vals.append(val)
-        
-        lines.append(','.join(vals))
-    
-    return "\n".join(lines), 200, {"Content-Type": "text/csv" if fmt == "csv" else "text/plain"}
+    if not data:
+        return Response("", mimetype="text/csv" if fmt == "csv" else "text/plain")
+
+    output = io.StringIO(newline="")
+    fields = list(data[0].keys())
+    writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore", lineterminator="\n")
+    if fmt == "csv":
+        writer.writeheader()
+    for item in data:
+        writer.writerow({key: _csv_value(item.get(key)) for key in fields})
+
+    content_type = "text/csv; charset=utf-8" if fmt == "csv" else "text/plain; charset=utf-8"
+    response = Response(output.getvalue(), content_type=content_type)
+    response.headers["Content-Disposition"] = f'attachment; filename="proxies.{fmt}"'
+    return response

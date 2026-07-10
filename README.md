@@ -17,7 +17,7 @@ The repository is being rebuilt in controlled overlays. Existing backend behavio
 ## Local project path
 
 ```bash
-cd /home/mahdi/projects/proxypool
+cd /home/mahdi/projects/proxyPool
 ```
 
 ## Development setup
@@ -127,3 +127,17 @@ Back up the active database before any destructive import, restore, or schema op
 ## Current engineering status
 
 The original dashboard and backend have known correctness, security, lifecycle, and maintainability issues. The verified baseline and rebuild sequence are documented in [`docs/BASELINE_AUDIT.md`](docs/BASELINE_AUDIT.md). The dashboard will be replaced rather than incrementally restyled.
+
+## Authentication and security baseline
+
+The application no longer ships with a built-in default password. Prefer a database-backed administrator:
+
+```bash
+python3 scripts/create_admin.py --username admin --role admin
+```
+
+Set independent random values for `FLASK_SECRET_KEY` and `JWT_SECRET` in `.env`. The optional `DASHBOARD_PASSWORD` variable only enables a legacy environment-backed admin account for migration compatibility.
+
+Browser mutations require CSRF tokens. General proxy APIs and exports redact upstream credentials. Credential-bearing export requires the `proxies.credentials` permission and `include_credentials=true`.
+
+The complete local security baseline and remaining boundaries are documented in [`docs/SECURITY.md`](docs/SECURITY.md).

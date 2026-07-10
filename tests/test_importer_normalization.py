@@ -54,6 +54,22 @@ class ImporterNormalizationTest(unittest.TestCase):
     def test_invalid_port_is_rejected(self):
         self.assertIsNone(self.importer.normalize_proxy_line('10.0.0.4:notaport', 'http'))
 
+    def test_ui_manual_protocol_host_port_format(self):
+        result = self.importer.normalize_proxy_line('http 192.168.1.1:8080', 'socks5')
+        self.assertEqual(result, ('http', '192.168.1.1', 8080, None, None))
+
+    def test_ui_manual_auth_format(self):
+        result = self.importer.normalize_proxy_line('socks5 10.0.0.1:1080 user pass', 'http')
+        self.assertEqual(result, ('socks5', '10.0.0.1', 1080, 'user', 'pass'))
+
+    def test_separate_host_port_format(self):
+        result = self.importer.normalize_proxy_line('https proxy.example 8443 alice secret', 'http')
+        self.assertEqual(result, ('https', 'proxy.example', 8443, 'alice', 'secret'))
+
+    def test_bracketed_ipv6_format(self):
+        result = self.importer.normalize_proxy_line('[2001:db8::1]:8080', 'http')
+        self.assertEqual(result, ('http', '2001:db8::1', 8080, None, None))
+
 
 if __name__ == '__main__':
     unittest.main()

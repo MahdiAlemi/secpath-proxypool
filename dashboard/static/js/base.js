@@ -1,7 +1,3 @@
-function getToken() {
-  return localStorage.getItem('token') || '';
-}
-
 function togglePermCategory(catId) {
   const el = document.getElementById(catId);
   const icon = document.getElementById(catId + '-icon');
@@ -15,12 +11,13 @@ function togglePermCategory(catId) {
 }
 
 function authFetch(url, options = {}) {
-  const token = getToken();
-  options.headers = options.headers || {};
-  if (token) {
-    options.headers['Authorization'] = 'Bearer ' + token;
+  const headers = new Headers(options.headers || {});
+  const method = String(options.method || 'GET').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    const csrf = document.querySelector('meta[name="csrf-token"]');
+    if (csrf) headers.set('X-CSRF-Token', csrf.content);
   }
-  return fetch(url, options);
+  return fetch(url, {...options, headers, credentials: 'same-origin'});
 }
 
 function toggleRunModeOptions() {
@@ -785,8 +782,8 @@ async function loadUsers() {
   var html = '<table style="width:100%;border-collapse:collapse"><tr style="text-align:left;background:var(--panel-light)"><th style="padding:8px">User</th><th style="padding:8px">Role</th><th style="padding:8px">Status</th><th style="padding:8px">Actions</th></tr>';
   users.forEach(function(u) {
     html += '<tr style="border-bottom:1px solid var(--border)">' +
-      '<td style="padding:8px">' + u.username + '</td>' +
-      '<td style="padding:8px">' + u.role + '</td>' +
+      '<td style="padding:8px">' + escapeHtml(u.username) + '</td>' +
+      '<td style="padding:8px">' + escapeHtml(u.role) + '</td>' +
       '<td style="padding:8px">' + (u.is_active ? '<span style="color:var(--success)">Active</span>' : '<span style="color:var(--danger)">Inactive</span>') + '</td>' +
       '<td style="padding:8px">' +
         '<button class="btn btn-sm" onclick="editUser(' + u.id + ')">Edit</button> ' +
@@ -1141,56 +1138,59 @@ async function loadProxies() {
     }
 
     var tr = document.createElement('tr');
-    var proxyUrl = p.username && p.password 
-      ? p.protocol + '://' + p.username + ':' + p.password + '@' + p.ip + ':' + p.port
-      : p.protocol + '://' + p.ip + ':' + p.port;
+    var proxyUrl = String(p.protocol || '') + '://' + String(p.ip || '') + ':' + String(p.port || '');
     var actionsHtml = '';
+    var safeId = Number(p.id) || 0;
     if (hasPermission('proxies.test')) {
-      actionsHtml += '<button class="btn btn-sm" onclick="testProxy(' + p.id + ')">Test</button> ';
+      actionsHtml += '<button class="btn btn-sm" data-proxy-id="' + safeId + '" onclick="testProxyFromButton(this)">Test</button> ';
     }
     if (hasPermission('proxies.edit')) {
-      actionsHtml += '<button class="btn btn-sm" onclick="editProxy(' + p.id + ',\'' + p.protocol + '\',\'' + p.ip + '\',' + p.port + ',\'' + (p.username||'') + '\',\'' + (p.password||'') + '\')">Edit</button> ';
+      actionsHtml += '<button class="btn btn-sm" data-proxy-id="' + safeId + '" data-protocol="' + escapeHtml(p.protocol || '') + '" data-ip="' + escapeHtml(p.ip || '') + '" data-port="' + escapeHtml(p.port || '') + '" onclick="editProxyFromButton(this)">Edit</button> ';
     }
     if (hasPermission('proxies.delete')) {
-      actionsHtml += '<button class="btn btn-sm btn-danger" onclick="deleteProxy(' + p.id + ')">Del</button>';
+      actionsHtml += '<button class="btn btn-sm btn-danger" data-proxy-id="' + safeId + '" onclick="deleteProxyFromButton(this)">Del</button>';
     }
-    tr.innerHTML = 
-      '<td style="cursor:pointer;color:var(--accent);font-weight:500" onclick="copyProxy(\'' + proxyUrl + '\')" title="Click to copy">' + p.ip + ':' + p.port + '</td>' +
-      '<td class="col-toggle" data-col="protocol">' + p.protocol + '</td>' +
-      '<td class="col-toggle" data-col="port">' + p.port + '</td>' +
-      '<td class="col-toggle" data-col="status"><span class="status-dot ' + statusClass + '"></span> ' + statusLabel + '</td>' +
-      '<td class="col-toggle" data-col="prev_state">' + (p.previous_state || '-') + '</td>' +
-      '<td class="col-toggle" data-col="delta">' + (p.last_transition || '-') + '</td>' +
-      '<td class="col-toggle" data-col="cost">' + (p.cost || 0).toFixed(3) + '</td>' +
-      '<td class="col-toggle" data-col="latency">' + (p.latency_score != null ? (p.latency_score).toFixed(3) : '-') + '</td>' +
-      '<td class="col-toggle" data-col="reliability">' + (p.reliability != null ? (p.reliability).toFixed(3) : '-') + '</td>' +
-      '<td class="col-toggle" data-col="jitter">' + (p.jitter_score != null ? (p.jitter_score).toFixed(3) : '-') + '</td>' +
-      '<td class="col-toggle" data-col="recency">' + (p.recency_score != null ? (p.recency_score).toFixed(3) : '-') + '</td>' +
-      '<td class="col-toggle" data-col="prev_cost">' + (p.previous_cost != null ? (p.previous_cost).toFixed(3) : '-') + '</td>' +
-      '<td class="col-toggle" data-col="speed">' + (p.speed_ms || '-') + 'ms</td>' +
+    var authBadge = p.has_auth ? ' <span title="Upstream credentials are stored but hidden">&#128274;</span>' : '';
+    var locationText = (p.lat != null && p.lon != null) ? Number(p.lat).toFixed(4) + ',' + Number(p.lon).toFixed(4) : '-';
+    tr.innerHTML =
+      '<td class="proxy-copy-cell" title="Click to copy address">' + escapeHtml(p.ip) + ':' + escapeHtml(p.port) + authBadge + '</td>' +
+      '<td class="col-toggle" data-col="protocol">' + escapeHtml(p.protocol) + '</td>' +
+      '<td class="col-toggle" data-col="port">' + escapeHtml(p.port) + '</td>' +
+      '<td class="col-toggle" data-col="status"><span class="status-dot ' + statusClass + '"></span> ' + escapeHtml(statusLabel) + '</td>' +
+      '<td class="col-toggle" data-col="prev_state">' + escapeHtml(p.previous_state || '-') + '</td>' +
+      '<td class="col-toggle" data-col="delta">' + escapeHtml(p.last_transition || '-') + '</td>' +
+      '<td class="col-toggle" data-col="cost">' + Number(p.cost || 0).toFixed(3) + '</td>' +
+      '<td class="col-toggle" data-col="latency">' + (p.latency_score != null ? Number(p.latency_score).toFixed(3) : '-') + '</td>' +
+      '<td class="col-toggle" data-col="reliability">' + (p.reliability != null ? Number(p.reliability).toFixed(3) : '-') + '</td>' +
+      '<td class="col-toggle" data-col="jitter">' + (p.jitter_score != null ? Number(p.jitter_score).toFixed(3) : '-') + '</td>' +
+      '<td class="col-toggle" data-col="recency">' + (p.recency_score != null ? Number(p.recency_score).toFixed(3) : '-') + '</td>' +
+      '<td class="col-toggle" data-col="prev_cost">' + (p.previous_cost != null ? Number(p.previous_cost).toFixed(3) : '-') + '</td>' +
+      '<td class="col-toggle" data-col="speed">' + escapeHtml(p.speed_ms == null ? '-' : p.speed_ms) + 'ms</td>' +
       '<td class="col-toggle" data-col="web_https">' + capabilityMark(p.web_https_ok) + '</td>' +
       '<td class="col-toggle" data-col="remote_dns">' + capabilityMark(p.remote_dns_ok) + '</td>' +
       '<td class="col-toggle" data-col="telegram">' + capabilityMark(p.telegram_ok) + '</td>' +
-      '<td class="col-toggle" data-col="exit_ip">' + (p.exit_ip || '-') + '</td>' +
-      '<td class="col-toggle" data-col="alive">' + (p.alive_hits || 0) + '</td>' +
-      '<td class="col-toggle" data-col="fails">' + (p.fail_hits || 0) + '</td>' +
-      '<td class="col-toggle" data-col="total_checks">' + (p.total_checks || 0) + '</td>' +
-      '<td class="col-toggle" data-col="consecutive_fails">' + (p.consecutive_fails || 0) + '</td>' +
-      '<td class="col-toggle" data-col="country">' + (p.countryCode || '-') + '</td>' +
-      '<td class="col-toggle" data-col="region">' + (p.regionName || '-') + '</td>' +
-      '<td class="col-toggle" data-col="city">' + (p.city || '-') + '</td>' +
-      '<td class="col-toggle" data-col="district">' + (p.district || '-') + '</td>' +
-      '<td class="col-toggle" data-col="zip">' + (p.zip || '-') + '</td>' +
-      '<td class="col-toggle" data-col="isp">' + (p.isp || '-') + '</td>' +
-      '<td class="col-toggle" data-col="asn">' + (p.asn || '-') + '</td>' +
-      '<td class="col-toggle" data-col="org">' + (p.org || '-') + '</td>' +
-      '<td class="col-toggle" data-col="location">' + (p.lat && p.lon ? p.lat.toFixed(4) + ',' + p.lon.toFixed(4) : '-') + '</td>' +
-      '<td class="col-toggle" data-col="timezone">' + (p.timezone || '-') + '</td>' +
+      '<td class="col-toggle" data-col="exit_ip">' + escapeHtml(p.exit_ip || '-') + '</td>' +
+      '<td class="col-toggle" data-col="alive">' + escapeHtml(p.alive_hits || 0) + '</td>' +
+      '<td class="col-toggle" data-col="fails">' + escapeHtml(p.fail_hits || 0) + '</td>' +
+      '<td class="col-toggle" data-col="total_checks">' + escapeHtml(p.total_checks || 0) + '</td>' +
+      '<td class="col-toggle" data-col="consecutive_fails">' + escapeHtml(p.consecutive_fails || 0) + '</td>' +
+      '<td class="col-toggle" data-col="country">' + escapeHtml(p.countryCode || '-') + '</td>' +
+      '<td class="col-toggle" data-col="region">' + escapeHtml(p.regionName || '-') + '</td>' +
+      '<td class="col-toggle" data-col="city">' + escapeHtml(p.city || '-') + '</td>' +
+      '<td class="col-toggle" data-col="district">' + escapeHtml(p.district || '-') + '</td>' +
+      '<td class="col-toggle" data-col="zip">' + escapeHtml(p.zip || '-') + '</td>' +
+      '<td class="col-toggle" data-col="isp">' + escapeHtml(p.isp || '-') + '</td>' +
+      '<td class="col-toggle" data-col="asn">' + escapeHtml(p.asn || '-') + '</td>' +
+      '<td class="col-toggle" data-col="org">' + escapeHtml(p.org || '-') + '</td>' +
+      '<td class="col-toggle" data-col="location">' + escapeHtml(locationText) + '</td>' +
+      '<td class="col-toggle" data-col="timezone">' + escapeHtml(p.timezone || '-') + '</td>' +
       '<td class="col-toggle" data-col="mobile">' + (p.mobile ? '✓' : '-') + '</td>' +
       '<td class="col-toggle" data-col="hosting">' + (p.hosting ? '✓' : '-') + '</td>' +
-      '<td class="col-toggle" data-col="lastalive">' + (p.last_alive ? new Date(p.last_alive).toLocaleDateString() : '-') + '</td>' +
-      '<td class="col-toggle" data-col="lastcheck">' + (p.last_checked ? new Date(p.last_checked).toLocaleDateString() : '-') + '</td>' +
+      '<td class="col-toggle" data-col="lastalive">' + (p.last_alive ? escapeHtml(new Date(p.last_alive).toLocaleDateString()) : '-') + '</td>' +
+      '<td class="col-toggle" data-col="lastcheck">' + (p.last_checked ? escapeHtml(new Date(p.last_checked).toLocaleDateString()) : '-') + '</td>' +
       '<td class="row-actions">' + actionsHtml + '</td>';
+    var copyCell = tr.querySelector('.proxy-copy-cell');
+    if (copyCell) copyCell.addEventListener('click', function() { copyProxy(proxyUrl); });
     tbody.appendChild(tr);
   });
 
@@ -1288,14 +1288,26 @@ async function doBulkAdd() {
   }
 }
 
-function editProxy(id, proto, ip, port, user, pass) {
+function editProxy(id, proto, ip, port) {
   document.getElementById('edit-id').value = id;
   document.getElementById('edit-proto').value = proto;
   document.getElementById('edit-ip').value = ip;
   document.getElementById('edit-port').value = port;
-  document.getElementById('edit-user').value = user;
-  document.getElementById('edit-pass').value = pass;
+  document.getElementById('edit-user').value = '';
+  document.getElementById('edit-pass').value = '';
   document.getElementById('modal-edit').classList.add('active');
+}
+
+function editProxyFromButton(button) {
+  editProxy(button.dataset.proxyId, button.dataset.protocol, button.dataset.ip, button.dataset.port);
+}
+
+function deleteProxyFromButton(button) {
+  deleteProxy(Number(button.dataset.proxyId));
+}
+
+function testProxyFromButton(button) {
+  testProxy(Number(button.dataset.proxyId), button);
 }
 
 async function doEditProxy() {
@@ -1303,10 +1315,14 @@ async function doEditProxy() {
   var data = {
     protocol: document.getElementById('edit-proto').value,
     ip: document.getElementById('edit-ip').value,
-    port: parseInt(document.getElementById('edit-port').value),
-    username: document.getElementById('edit-user').value,
-    password: document.getElementById('edit-pass').value
+    port: parseInt(document.getElementById('edit-port').value)
   };
+  var newUsername = document.getElementById('edit-user').value;
+  var newPassword = document.getElementById('edit-pass').value;
+  if (newUsername || newPassword) {
+    data.username = newUsername;
+    data.password = newPassword;
+  }
 
   var res = await authFetch('/api/proxies/' + id, {
     method: 'PUT',
@@ -1327,8 +1343,8 @@ async function deleteProxy(id) {
   });
 }
 
-async function testProxy(id) {
-  var btn = event.target;
+async function testProxy(id, button) {
+  var btn = button || event.target;
   btn.textContent = 'Testing...';
   btn.disabled = true;
 
@@ -1369,113 +1385,78 @@ async function exportProxies(fmt) {
   window.location.href = '/api/export?' + params.toString();
 }
 
+function renderImportResult(data) {
+  var target = document.getElementById('import-result');
+  if (!target) return;
+  if (!data || data.success !== true) {
+    target.textContent = 'Error: ' + ((data && data.error) || 'Import failed');
+    return;
+  }
+  target.textContent = 'Imported: ' + (data.added || 0) + ', Skipped: ' + (data.skipped || 0);
+}
+
+function setImportLoading() {
+  var target = document.getElementById('import-result');
+  if (target) target.textContent = 'Importing...';
+}
+
+async function runImport(payload) {
+  setImportLoading();
+  try {
+    var res = await authFetch('/api/import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    var data = await res.json();
+    renderImportResult(data);
+    if (data.success) loadProxies();
+  } catch (e) {
+    renderImportResult({success: false, error: e.message || String(e)});
+  }
+}
+
 async function doImportUrl() {
   var proto = document.getElementById('import-url-proto').value;
   var url = document.getElementById('import-url-input').value;
   if (!url) { showAlert('URL required'); return; }
-
   var countText = document.getElementById('import-url-count').textContent;
   var match = countText.match(/Found (\d+)/);
   var count = match ? parseInt(match[1]) : 0;
-  
+  var execute = function() { return runImport({mode: 'url', protocol: proto, url: url}); };
   if (count > 0) {
-    showConfirm('Import Proxies', 'Import ' + count + ' proxies from URL?', async function() {
-      document.getElementById('import-result').innerHTML = '<div class="import-result-card">Importing...</div>';
-      var res = await authFetch('/api/import', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({mode: 'url', protocol: proto, url: url})
-      });
-      var data = await res.json();
-      document.getElementById('import-result').innerHTML = data.success 
-        ? 'Imported: ' + (data.added || 0) + ', Skipped (duplicates): ' + (data.skipped || 0) + '<br><pre style="font-size:10px;max-height:100px;overflow:auto">' + (data.message || '') + '</pre>' 
-        : 'Error: ' + data.error;
-    }, {confirmText: 'Import', confirmClass: 'btn-primary'});
-    return;
+    showConfirm('Import Proxies', 'Import ' + count + ' proxies from URL?', execute, {confirmText: 'Import', confirmClass: 'btn-primary'});
+  } else {
+    await execute();
   }
-
-  document.getElementById('import-result').innerHTML = '<div class="import-result-card">Importing...</div>';
-  var res = await authFetch('/api/import', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({mode: 'url', protocol: proto, url: url})
-  });
-  var data = await res.json();
-  document.getElementById('import-result').innerHTML = data.success 
-    ? 'Imported: ' + (data.added || 0) + ', Skipped (duplicates): ' + (data.skipped || 0) + '<br><pre style="font-size:10px;max-height:100px;overflow:auto">' + (data.message || '') + '</pre>' 
-    : 'Error: ' + data.error;
 }
 
 async function doImportLinks() {
   var content = document.getElementById('import-links-content').value;
   if (!content) { showAlert('Content required'); return; }
-
   var countText = document.getElementById('import-links-count').textContent;
   var match = countText.match(/Total: (\d+)/);
   var count = match ? parseInt(match[1]) : 0;
-  
+  var execute = function() { return runImport({mode: 'links', content: content}); };
   if (count > 0) {
-    showConfirm('Import Proxies', 'Import ' + count + ' proxies?', async function() {
-      document.getElementById('import-result').innerHTML = '<div class="import-result-card">Importing...</div>';
-      var res = await authFetch('/api/import', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({mode: 'links', content: content})
-      });
-      var data = await res.json();
-      var resultText = data.success 
-        ? 'Imported: ' + (data.added || 0) + ', Skipped (duplicates): ' + (data.skipped || 0)
-        : 'Error: ' + data.error;
-      document.getElementById('import-result').innerHTML = resultText;
-      loadProxies();
-    }, {confirmText: 'Import', confirmClass: 'btn-primary'});
-    return;
+    showConfirm('Import Proxies', 'Import ' + count + ' proxies?', execute, {confirmText: 'Import', confirmClass: 'btn-primary'});
+  } else {
+    await execute();
   }
-
-  document.getElementById('import-result').innerHTML = '<div class="import-result-card">Importing...</div>';
-  var res = await authFetch('/api/import', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({mode: 'links', content: content})
-  });
-  var data = await res.json();
-  var resultText = data.success 
-    ? 'Imported: ' + (data.added || 0) + ', Skipped (duplicates): ' + (data.skipped || 0)
-    : 'Error: ' + data.error;
-  document.getElementById('import-result').innerHTML = resultText;
-  loadProxies();
 }
 
 async function doImportManual() {
   var proxies = document.getElementById('import-manual-content').value;
   if (!proxies) { showAlert('Proxies required'); return; }
-
   var countText = document.getElementById('import-manual-count').textContent;
   var match = countText.match(/Total: (\d+)/);
   var count = match ? parseInt(match[1]) : 0;
-  
+  var execute = function() { return runImport({mode: 'manual', proxies: proxies}); };
   if (count > 0) {
-    showConfirm('Import Proxies', 'Import ' + count + ' proxies?', async function() {
-      var res = await authFetch('/api/import', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({mode: 'manual', proxies: proxies})
-      });
-      var data = await res.json();
-      document.getElementById('import-result').innerHTML = 'Added: ' + data.added + ', Skipped: ' + data.skipped;
-      loadProxies();
-    }, {confirmText: 'Import', confirmClass: 'btn-primary'});
-    return;
+    showConfirm('Import Proxies', 'Import ' + count + ' proxies?', execute, {confirmText: 'Import', confirmClass: 'btn-primary'});
+  } else {
+    await execute();
   }
-
-  var res = await authFetch('/api/import', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({mode: 'manual', proxies: proxies})
-  });
-  var data = await res.json();
-  document.getElementById('import-result').innerHTML = 'Added: ' + data.added + ', Skipped: ' + data.skipped;
-  loadProxies();
 }
 
 function clearImportCount(type) {
@@ -1680,11 +1661,11 @@ async function checkMonitorStatus() {
     previousMonitorState[mid] = { running: isRunning };
     
     var config = m.config || {};
-    var profileName = m.name || config.name || mid.replace('monitor_', '');
-    var protocol = (config.protocol || 'all').toUpperCase();
-    var status = config.status || 'all';
-    var threads = config.threads || 50;
-    var timeout = config.timeout || 5;
+    var profileName = escapeHtml(m.name || config.name || mid.replace('monitor_', ''));
+    var protocol = escapeHtml((config.protocol || 'all').toUpperCase());
+    var status = escapeHtml(config.status || 'all');
+    var threads = escapeHtml(config.threads || 50);
+    var timeout = escapeHtml(config.timeout || 5);
     var probes = config.probes || 2;
     var runMode = config.run_mode || 'once';
     var interval = config.interval || 60;
@@ -1694,11 +1675,11 @@ async function checkMonitorStatus() {
     var scheduleTime = config.schedule_time || '';
     var scheduleDays = config.schedule_days || '';
     var customEvery = config.custom_every || 24;
-    var proxyCount = m.proxy_count || 0;
+    var proxyCount = escapeHtml(m.proxy_count || 0);
     var startTime = m.start_time;
     var endTime = m.end_time;
     
-    var runModeDisplay = runMode;
+    var runModeDisplay = String(runMode);
     if (runMode === 'schedule' && scheduleTime) {
       runModeDisplay = 'schedule @ ' + scheduleTime;
     } else if (runMode === 'custom') {
@@ -1707,6 +1688,7 @@ async function checkMonitorStatus() {
       runModeDisplay = runMode + ' (' + interval + 's)';
     }
     
+    runModeDisplay = escapeHtml(runModeDisplay);
     var card = document.createElement('div');
     card.className = 'monitor-card monitor-profile-card';
     
@@ -2226,19 +2208,19 @@ async function checkServerStatus() {
         '<div class="server-card-header">' +
           '<div class="server-card-title">' +
             '<span class="status-dot ' + statusDotClass + '"></span>' +
-            (cfg.protocol || 'http').toUpperCase() + ' on port ' + port +
+            escapeHtml((cfg.protocol || 'http').toUpperCase()) + ' on port ' + escapeHtml(port) +
           '</div>' +
           '<span class="server-card-status ' + statusClass + '">' + statusText + (s.running && s.pid ? ' (PID: ' + s.pid + ')' : '') + '</span>' +
         '</div>' +
         '<div class="server-card-body">' +
-          '<div class="server-card-row"><span class="server-card-label">Protocol</span><span class="server-card-value">' + (cfg.protocol || '-').toUpperCase() + '</span></div>' +
-          '<div class="server-card-row"><span class="server-card-label">Bind Address</span><span class="server-card-value">' + (cfg.bind || '0.0.0.0') + '</span></div>' +
-          '<div class="server-card-row"><span class="server-card-label">Port</span><span class="server-card-value">' + port + '</span></div>' +
-          '<div class="server-card-row"><span class="server-card-label">Rotate Mode</span><span class="server-card-value">' + (cfg.rotate || 'fixed') + '</span></div>' +
+          '<div class="server-card-row"><span class="server-card-label">Protocol</span><span class="server-card-value">' + escapeHtml((cfg.protocol || '-').toUpperCase()) + '</span></div>' +
+          '<div class="server-card-row"><span class="server-card-label">Bind Address</span><span class="server-card-value">' + escapeHtml(cfg.bind || '0.0.0.0') + '</span></div>' +
+          '<div class="server-card-row"><span class="server-card-label">Port</span><span class="server-card-value">' + escapeHtml(port) + '</span></div>' +
+          '<div class="server-card-row"><span class="server-card-label">Rotate Mode</span><span class="server-card-value">' + escapeHtml(cfg.rotate || 'fixed') + '</span></div>' +
           '<div class="server-card-row"><span class="server-card-label">Rotate Interval</span><span class="server-card-value">' + (cfg.rotate_interval || 60) + 's</span></div>' +
           '<div class="server-card-row"><span class="server-card-label">Min Cost</span><span class="server-card-value">$' + (cfg.min_cost || 0) + '</span></div>' +
           '<div class="server-card-row"><span class="server-card-label">Cost Threshold</span><span class="server-card-value">$' + (cfg.cost_threshold || 0.3) + '</span></div>' +
-          '<div class="server-card-row"><span class="server-card-label">Candidates</span><span class="server-card-value">' + (cfg.candidate_statuses || 'alive') + '</span></div>' +
+          '<div class="server-card-row"><span class="server-card-label">Candidates</span><span class="server-card-value">' + escapeHtml(cfg.candidate_statuses || 'alive') + '</span></div>' +
           '<div class="server-card-row"><span class="server-card-label">HTTPS OK</span><span class="server-card-value">' + (cfg.require_web_https === false ? 'No' : 'Yes') + '</span></div>' +
           '<div class="server-card-row"><span class="server-card-label">Telegram</span><span class="server-card-value">' + (cfg.require_telegram ? 'Yes' : 'No') + '</span></div>' +
         '</div>' +
@@ -2665,7 +2647,7 @@ function startServerLogStream() {
   var logEl = document.getElementById('server-log');
   serverEventSource.onmessage = function(e) {
     if (e.data) {
-      logEl.innerHTML += e.data;
+      logEl.textContent += e.data + '\n';
       logEl.scrollTop = logEl.scrollHeight;
     }
   };
@@ -2681,12 +2663,12 @@ function stopServerLogStream() {
 async function loadServerLog() {
   var res = await authFetch('/api/server/log');
   var data = await res.json();
-  document.getElementById('server-log').innerHTML = data.lines.join('');
+  document.getElementById('server-log').textContent = (data.lines || []).join('');
   document.getElementById('server-log').scrollTop = document.getElementById('server-log').scrollHeight;
 }
 
 function clearServerLog() {
-  document.getElementById('server-log').innerHTML = '';
+  document.getElementById('server-log').textContent = '';
 }
 
 
@@ -2871,7 +2853,7 @@ async function loadStats() {
     if (data.by_country && data.by_country.length > 0) {
       var maxCountry = data.by_country[0] ? data.by_country[0].count : 1;
       data.by_country.forEach(function(c, i) {
-        countryList.innerHTML += '<div style="display:flex;align-items:center;gap:12px"><span style="width:20px;font-weight:bold;color:var(--muted)">' + (i+1) + '</span><span style="width:60px">' + c.country + '</span><div style="flex:1;height:16px;background:var(--panel-light);border-radius:4px"><div style="height:100%;width:' + (c.count/maxCountry)*100 + '%;background:var(--accent);border-radius:4px"></div></div><span style="width:50px;text-align:right">' + c.count + '</span></div>';
+        countryList.innerHTML += '<div style="display:flex;align-items:center;gap:12px"><span style="width:20px;font-weight:bold;color:var(--muted)">' + (i+1) + '</span><span style="width:60px">' + escapeHtml(c.country) + '</span><div style="flex:1;height:16px;background:var(--panel-light);border-radius:4px"><div style="height:100%;width:' + (c.count/maxCountry)*100 + '%;background:var(--accent);border-radius:4px"></div></div><span style="width:50px;text-align:right">' + c.count + '</span></div>';
       });
     }
 
@@ -2880,7 +2862,7 @@ async function loadStats() {
     if (data.by_isp && data.by_isp.length > 0) {
       var maxIsp = data.by_isp[0] ? data.by_isp[0].count : 1;
       data.by_isp.forEach(function(isp, i) {
-        ispList.innerHTML += '<div style="display:flex;align-items:center;gap:12px"><span style="width:20px;font-weight:bold;color:var(--muted)">' + (i+1) + '</span><span style="width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + isp.isp + '</span><div style="flex:1;height:16px;background:var(--panel-light);border-radius:4px"><div style="height:100%;width:' + (isp.count/maxIsp)*100 + '%;background:var(--accent);border-radius:4px"></div></div><span style="width:50px;text-align:right">' + isp.count + '</span></div>';
+        ispList.innerHTML += '<div style="display:flex;align-items:center;gap:12px"><span style="width:20px;font-weight:bold;color:var(--muted)">' + (i+1) + '</span><span style="width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escapeHtml(isp.isp) + '</span><div style="flex:1;height:16px;background:var(--panel-light);border-radius:4px"><div style="height:100%;width:' + (isp.count/maxIsp)*100 + '%;background:var(--accent);border-radius:4px"></div></div><span style="width:50px;text-align:right">' + isp.count + '</span></div>';
       });
     }
   } catch (e) {

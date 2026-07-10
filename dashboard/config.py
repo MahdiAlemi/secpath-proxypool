@@ -6,8 +6,10 @@ DB_PATH = "proxies.db"
 PROTOCOLS = ["http", "https", "socks4", "socks5"]
 ROTATE_MODES = ["fixed", "per_connection", "better_cost", "time", "sticky"]
 
-JWT_SECRET = os.environ.get("JWT_SECRET", os.environ.get("FLASK_SECRET_KEY", "dev-jwt-secret-change-me"))
-JWT_EXPIRY_HOURS = 24
+_configured_secret = os.environ.get("JWT_SECRET")
+JWT_SECRET = _configured_secret or secrets.token_hex(32)
+JWT_SECRET_CONFIGURED = bool(_configured_secret)
+JWT_EXPIRY_HOURS = max(1, int(os.environ.get("JWT_EXPIRY_HOURS", "24")))
 
 HIDDEN_COLS = {
     "id", "protocol", "port", "last_alive", "last_fail", "continent", "country",
@@ -15,16 +17,18 @@ HIDDEN_COLS = {
     "district", "timezone", "isp", "org", "region", "username", "password"
 }
 
-USERS = {"admin": os.environ.get("DASHBOARD_PASSWORD", "password123")}
+_legacy_admin_password = os.environ.get("DASHBOARD_PASSWORD", "").strip()
+USERS = {"admin": _legacy_admin_password} if _legacy_admin_password else {}
 
 ROLE_PERMISSIONS = {
     'admin': ['*'],
     'superadmin': [
-        'proxies.view', 'proxies.add', 'proxies.delete', 'proxies.import', 'proxies.export', 'proxies.test', 'proxies.edit', 'proxies.columns', 'proxies.search', 'proxies.refresh',
+        'proxies.view', 'proxies.add', 'proxies.delete', 'proxies.import', 'proxies.export', 'proxies.credentials', 'proxies.test', 'proxies.edit', 'proxies.columns', 'proxies.search', 'proxies.refresh',
         'monitor.view', 'monitor.control',
         'server.view', 'server.control',
         'stats.view',
-        'settings.view', 'settings.edit'
+        'settings.view', 'settings.edit',
+        'users.manage'
     ],
     'user': [
         'proxies.view', 'server.view'
@@ -32,7 +36,7 @@ ROLE_PERMISSIONS = {
 }
 
 ALL_PERMISSIONS = [
-    'proxies.view', 'proxies.add', 'proxies.delete', 'proxies.import', 'proxies.export', 'proxies.test', 'proxies.edit', 'proxies.columns', 'proxies.search', 'proxies.refresh',
+    'proxies.view', 'proxies.add', 'proxies.delete', 'proxies.import', 'proxies.export', 'proxies.credentials', 'proxies.test', 'proxies.edit', 'proxies.columns', 'proxies.search', 'proxies.refresh',
     'monitor.view', 'monitor.control',
     'server.view', 'server.control',
     'stats.view',
@@ -52,7 +56,7 @@ def load_monitors_config():
         try:
             with open(monitors_config_file) as f:
                 return json.load(f)
-        except:
+        except Exception:
             pass
     return {}
 
@@ -67,7 +71,7 @@ def load_servers_config():
         try:
             with open(servers_config_file) as f:
                 return json.load(f)
-        except:
+        except Exception:
             pass
     return {}
 

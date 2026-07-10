@@ -1,96 +1,111 @@
-import os
-import shutil
-from datetime import datetime
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, g, jsonify
+from sqlalchemy import func, or_
 
+from dashboard.config import PROTOCOLS
 from dashboard.decorators import login_required, require_permission
-from dashboard.config import DB_PATH, PROTOCOLS, USERS
+from dashboard.proxy_scope import apply_proxy_scope
+from database import Proxy
 
-stats_bp = Blueprint('stats', __name__)
+stats_bp = Blueprint("stats", __name__)
 
 
 def get_db():
-    from flask import g
     if "db_session" not in g:
         from database import db
+
         g.db_session = db.get_session()
     return g.db_session
+
+
+def _count(query):
+    return query.with_entities(func.count(Proxy.id)).scalar() or 0
 
 
 @stats_bp.route("/api/stats", methods=["GET"])
 @login_required
 @require_permission("stats.view")
 def api_stats():
-    from sqlalchemy import func, or_
-    from database import Proxy
-    
     session = get_db()
+    base = apply_proxy_scope(session.query(Proxy))
 
-    total = session.query(func.count(Proxy.id)).scalar()
-    alive = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive').scalar()
-    flaky = session.query(func.count(Proxy.id)).filter(Proxy.status == 'flaky').scalar()
-    soft = session.query(func.count(Proxy.id)).filter(Proxy.status == 'soft').scalar()
-    cooling = session.query(func.count(Proxy.id)).filter(Proxy.status == 'cooling').scalar()
-    dead = session.query(func.count(Proxy.id)).filter(Proxy.status == 'dead').scalar()
-    untested = session.query(func.count(Proxy.id)).filter(or_(Proxy.status == 'untested', Proxy.status.is_(None))).scalar()
-    revived = session.query(func.count(Proxy.id)).filter(Proxy.status == 'revived').scalar()
-    semi_alived = session.query(func.count(Proxy.id)).filter(Proxy.status == 'semi-revived').scalar()
+    total = _count(base)
+    status_counts = {
+        "alive": _count(base.filter(Proxy.status == "alive")),
+        "flaky": _count(base.filter(Proxy.status == "flaky")),
+        "soft": _count(base.filter(Proxy.status == "soft")),
+        "cooling": _count(base.filter(Proxy.status == "cooling")),
+        "dead": _count(base.filter(Proxy.status == "dead")),
+        "untested": _count(base.filter(or_(Proxy.status == "untested", Proxy.status.is_(None)))),
+        "revived": _count(base.filter(Proxy.status == "revived")),
+        "semi-revived": _count(base.filter(Proxy.status == "semi-revived")),
+    }
 
-    by_protocol = {}
-    for p in PROTOCOLS:
-        cnt = session.query(func.count(Proxy.id)).filter(Proxy.protocol == p).scalar()
-        by_protocol[p] = cnt
+    by_protocol = {protocol: _count(base.filter(Proxy.protocol == protocol)) for protocol in PROTOCOLS}
 
-    by_country = session.query(Proxy.countryCode, func.count(Proxy.id)).filter(
-        Proxy.countryCode.isnot(None), Proxy.countryCode != ''
-    ).group_by(Proxy.countryCode).order_by(func.count(Proxy.id).desc()).limit(10).all()
-    by_country = [{"country": r[0], "count": r[1]} for r in by_country]
+    by_country_rows = (
+        base.with_entities(Proxy.countryCode, func.count(Proxy.id))
+        .filter(Proxy.countryCode.isnot(None), Proxy.countryCode != "")
+        .group_by(Proxy.countryCode)
+        .order_by(func.count(Proxy.id).desc())
+        .limit(10)
+        .all()
+    )
+    by_country = [{"country": row[0], "count": row[1]} for row in by_country_rows]
 
-    avg_speed = session.query(func.avg(Proxy.speed_ms)).filter(Proxy.speed_ms.isnot(None)).scalar()
+    by_isp_rows = (
+        base.with_entities(Proxy.isp, func.count(Proxy.id))
+        .filter(Proxy.isp.isnot(None), Proxy.isp != "")
+        .group_by(Proxy.isp)
+        .order_by(func.count(Proxy.id).desc())
+        .limit(15)
+        .all()
+    )
+    by_isp = [{"isp": row[0], "count": row[1]} for row in by_isp_rows]
 
-    last_scan = session.query(func.max(Proxy.last_checked)).scalar()
+    avg_speed = base.with_entities(func.avg(Proxy.speed_ms)).filter(Proxy.speed_ms.isnot(None)).scalar()
+    last_scan = base.with_entities(func.max(Proxy.last_checked)).scalar()
 
     protocol_stats = {}
-    for p in PROTOCOLS:
-        alive_cnt = session.query(func.count(Proxy.id)).filter(Proxy.protocol == p, Proxy.status == 'alive').scalar()
-        flaky_cnt = session.query(func.count(Proxy.id)).filter(Proxy.protocol == p, Proxy.status == 'flaky').scalar()
-        soft_cnt = session.query(func.count(Proxy.id)).filter(Proxy.protocol == p, Proxy.status == 'soft').scalar()
-        cooling_cnt = session.query(func.count(Proxy.id)).filter(Proxy.protocol == p, Proxy.status == 'cooling').scalar()
-        dead_cnt = session.query(func.count(Proxy.id)).filter(Proxy.protocol == p, Proxy.status == 'dead').scalar()
-        untested_cnt = session.query(func.count(Proxy.id)).filter(Proxy.protocol == p, or_(Proxy.status == 'untested', Proxy.status.is_(None))).scalar()
-        revived_cnt = session.query(func.count(Proxy.id)).filter(Proxy.protocol == p, Proxy.status == 'revived').scalar()
-        semi_alived_cnt = session.query(func.count(Proxy.id)).filter(Proxy.protocol == p, Proxy.status == 'semi-revived').scalar()
-        last_check = session.query(func.max(Proxy.last_checked)).filter(Proxy.protocol == p).scalar()
-        protocol_stats[p] = {"alive": alive_cnt, "flaky": flaky_cnt, "soft": soft_cnt, "cooling": cooling_cnt, "dead": dead_cnt, "untested": untested_cnt, "revived": revived_cnt, "semi-revived": semi_alived_cnt, "last_check": last_check}
+    for protocol in PROTOCOLS:
+        protocol_query = base.filter(Proxy.protocol == protocol)
+        protocol_stats[protocol] = {
+            "alive": _count(protocol_query.filter(Proxy.status == "alive")),
+            "flaky": _count(protocol_query.filter(Proxy.status == "flaky")),
+            "soft": _count(protocol_query.filter(Proxy.status == "soft")),
+            "cooling": _count(protocol_query.filter(Proxy.status == "cooling")),
+            "dead": _count(protocol_query.filter(Proxy.status == "dead")),
+            "untested": _count(protocol_query.filter(or_(Proxy.status == "untested", Proxy.status.is_(None)))),
+            "revived": _count(protocol_query.filter(Proxy.status == "revived")),
+            "semi-revived": _count(protocol_query.filter(Proxy.status == "semi-revived")),
+            "last_check": protocol_query.with_entities(func.max(Proxy.last_checked)).scalar(),
+        }
 
-    by_isp = session.query(Proxy.isp, func.count(Proxy.id)).filter(
-        Proxy.isp.isnot(None), Proxy.isp != ''
-    ).group_by(Proxy.isp).order_by(func.count(Proxy.id).desc()).limit(15).all()
-    by_isp = [{"isp": r[0], "count": r[1]} for r in by_isp]
+    web_ready = _count(base.filter(Proxy.status == "alive", Proxy.web_https_ok.is_(True)))
+    dns_ready = _count(base.filter(Proxy.status == "alive", Proxy.remote_dns_ok.is_(True)))
+    telegram_ready = _count(base.filter(Proxy.status == "alive", Proxy.web_https_ok.is_(True), Proxy.telegram_ok.is_(True)))
+    full_capability = _count(
+        base.filter(
+            Proxy.status == "alive",
+            Proxy.web_https_ok.is_(True),
+            Proxy.remote_dns_ok.is_(True),
+            Proxy.telegram_ok.is_(True),
+        )
+    )
 
-    web_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.web_https_ok.is_(True)).scalar()
-    dns_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.remote_dns_ok.is_(True)).scalar()
-    telegram_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.web_https_ok.is_(True), Proxy.telegram_ok.is_(True)).scalar()
-    full_capability = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.web_https_ok.is_(True), Proxy.remote_dns_ok.is_(True), Proxy.telegram_ok.is_(True)).scalar()
-
-    return jsonify({
-        "total": total,
-        "alive": alive,
-        "flaky": flaky,
-        "soft": soft,
-        "cooling": cooling,
-        "dead": dead,
-        "untested": untested,
-        "revived": revived,
-        "semi-revived": semi_alived,
-        "by_protocol": by_protocol,
-        "by_country": by_country,
-        "by_isp": by_isp,
-        "protocol_stats": protocol_stats,
-        "avg_speed": round(avg_speed, 0) if avg_speed else 0,
-        "last_scan": last_scan,
-        "web_ready": web_ready,
-        "dns_ready": dns_ready,
-        "telegram_ready": telegram_ready,
-        "full_capability": full_capability
-    })
+    return jsonify(
+        {
+            "success": True,
+            "total": total,
+            **status_counts,
+            "by_protocol": by_protocol,
+            "by_country": by_country,
+            "by_isp": by_isp,
+            "protocol_stats": protocol_stats,
+            "avg_speed": round(avg_speed, 0) if avg_speed else 0,
+            "last_scan": last_scan,
+            "web_ready": web_ready,
+            "dns_ready": dns_ready,
+            "telegram_ready": telegram_ready,
+            "full_capability": full_capability,
+        }
+    )

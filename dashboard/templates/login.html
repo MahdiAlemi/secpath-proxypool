@@ -13,10 +13,12 @@
   {% if messages %}<div class="error">{{ messages[0] }}</div>{% else %}<div class="error" style="display:none"></div>{% endif %}
   {% endwith %}
   <form onsubmit="doLogin(event)">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="text" name="username" placeholder="Username" required autocomplete="username">
     <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
     <button type="submit">Sign in</button>
   </form>
+  {% if not auth_configured %}<p class="setup-note">No environment-backed admin password is configured. Sign in with a database user or create one with <code>scripts/create_admin.py</code>.</p>{% endif %}
 </div>
 </body>
 </html>
