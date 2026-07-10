@@ -1,6 +1,7 @@
 .hidden-by-perm,
 .hidden-by-filter,
 .hidden { display: none !important; }
+[hidden] { display: none !important; }
 
 *, *::before, *::after { box-sizing: border-box; }
 html { min-width: 320px; background: var(--bg); scroll-behavior: smooth; }
@@ -187,11 +188,15 @@ th.sortable:hover { color: var(--text-strong); }
   background: rgba(5,10,15,.62);
   backdrop-filter: blur(8px);
 }
-.modal.active { display: flex; }
+.modal.active { display: flex; overflow-y: auto; overscroll-behavior: contain; }
 .modal-content {
   width: min(520px, 100%);
   max-height: min(88vh, 900px);
+  max-height: min(88dvh, 900px);
+  min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 22px;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
