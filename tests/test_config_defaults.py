@@ -152,9 +152,9 @@ class MonitorRenderTest(unittest.TestCase):
                     sess['user_id'] = 0
                 res = client.get('/index?tab=monitor')
                 self.assertEqual(res.status_code, 200)
-                self.assertIn(b'monitor-overview', res.data)
-                self.assertIn(b'Validation Center', res.data)
-                self.assertIn(b'monitor-runtime-summary', res.data)
+                self.assertIn(b'validation-workspace', res.data)
+                self.assertIn(b'Validation workspace', res.data)
+                self.assertIn(b'validation-profile-list', res.data)
         finally:
             if getattr(db, 'Session', None) is not None:
                 db.Session.remove()

@@ -20,6 +20,7 @@ if command -v node >/dev/null 2>&1; then
   node --check dashboard/static/js/base.js
   node --check dashboard/static/js/inventory.js
   node --check dashboard/static/js/sources.js
+  node --check dashboard/static/js/validation.js
   node --check dashboard/static/js/shell.js
   node --check dashboard/static/js/login.js
 else

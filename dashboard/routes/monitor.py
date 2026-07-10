@@ -12,7 +12,7 @@ from pathlib import Path
 
 import psutil
 from flask import Blueprint, Response, jsonify, request
-from sqlalchemy import or_
+from sqlalchemy import case, func, or_
 
 from dashboard.config import load_monitors_config
 from dashboard.decorators import login_required, require_permission
@@ -204,6 +204,56 @@ def _filtered_proxy_query(session, saved_config):
 def _proxy_count(saved_config):
     with db.session() as session:
         return _filtered_proxy_query(session, saved_config).count()
+
+
+
+
+def _candidate_preview(profile, *, sample_limit=5):
+    """Return a non-mutating snapshot for the profile editor."""
+    with db.session() as session:
+        query = _filtered_proxy_query(session, profile)
+        total = query.count()
+        protocol_rows = (
+            query.with_entities(Proxy.protocol, func.count(Proxy.id))
+            .group_by(Proxy.protocol)
+            .all()
+        )
+        status_rows = (
+            query.with_entities(func.coalesce(Proxy.status, "untested"), func.count(Proxy.id))
+            .group_by(func.coalesce(Proxy.status, "untested"))
+            .all()
+        )
+        capability_row = query.with_entities(
+            func.coalesce(func.sum(case((Proxy.web_https_ok.is_(True), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((Proxy.remote_dns_ok.is_(True), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((Proxy.telegram_ok.is_(True), 1), else_=0)), 0),
+        ).one()
+        sample_rows = (
+            query.with_entities(Proxy.id, Proxy.protocol, Proxy.ip, Proxy.port, Proxy.status)
+            .order_by(Proxy.last_checked.desc(), Proxy.id.asc())
+            .limit(max(0, min(int(sample_limit), 10)))
+            .all()
+        )
+        samples = [
+            {
+                "id": row.id,
+                "protocol": row.protocol,
+                "endpoint": f"{row.ip}:{row.port}",
+                "status": row.status or "untested",
+            }
+            for row in sample_rows
+        ]
+    return {
+        "total": int(total or 0),
+        "protocols": {str(name or "unknown"): int(count or 0) for name, count in protocol_rows},
+        "statuses": {str(name or "untested"): int(count or 0) for name, count in status_rows},
+        "capabilities": {
+            "web_https": int(capability_row[0] or 0),
+            "remote_dns": int(capability_row[1] or 0),
+            "telegram": int(capability_row[2] or 0),
+        },
+        "samples": samples,
+    }
 
 
 def _build_args(saved_config, monitor_id, start_token):
@@ -536,6 +586,76 @@ def api_monitor_status():
                 "progress": progress,
             }
     return jsonify({"monitors": monitors})
+
+
+
+
+@monitor_bp.route("/api/monitor/preview", methods=["POST"])
+@login_required
+@require_permission("monitor.control")
+def api_monitor_preview():
+    try:
+        profile, _safe = _normalize_profile(request.get_json(silent=True) or {})
+        return jsonify({"success": True, "preview": _candidate_preview(profile)})
+    except ValueError as exc:
+        return api_error(str(exc), 400, "invalid_monitor_config")
+    except Exception:
+        return api_error("Could not preview monitor candidates", 500, "monitor_preview_failed")
+
+
+@monitor_bp.route("/api/monitor/<monitor_id>/results", methods=["GET"])
+@login_required
+@require_permission("monitor.view")
+def api_monitor_results(monitor_id):
+    monitor_id = _monitor_id(monitor_id)
+    if not monitor_id:
+        return api_error("Invalid monitor id", 400, "invalid_monitor_id")
+    if monitor_id not in load_monitors_config():
+        return api_error("Monitor profile not found", 404, "monitor_not_found")
+    try:
+        limit = _bounded_int(request.args.get("limit"), name="limit", minimum=1, maximum=100, default=25)
+        with db.session() as session:
+            rows = (
+                session.query(MonitorTested, Proxy)
+                .join(Proxy, Proxy.id == MonitorTested.proxy_id)
+                .filter(MonitorTested.session_id == monitor_id)
+                .order_by(MonitorTested.tested_at.desc(), Proxy.id.desc())
+                .limit(limit)
+                .all()
+            )
+            monitor_session = session.query(MonitorSession).filter_by(id=monitor_id).first()
+            results = [
+                {
+                    "proxy_id": proxy.id,
+                    "tested_at": tested.tested_at.isoformat() if tested.tested_at else None,
+                    "protocol": proxy.protocol,
+                    "endpoint": f"{proxy.ip}:{proxy.port}",
+                    "status": proxy.status or "untested",
+                    "speed_ms": proxy.speed_ms,
+                    "country_code": proxy.countryCode,
+                    "web_https_ok": bool(proxy.web_https_ok),
+                    "remote_dns_ok": bool(proxy.remote_dns_ok),
+                    "telegram_ok": bool(proxy.telegram_ok),
+                    "last_checked": proxy.last_checked.isoformat() if proxy.last_checked else None,
+                }
+                for tested, proxy in rows
+            ]
+            session_data = None
+            if monitor_session:
+                session_data = {
+                    "status": monitor_session.status,
+                    "started_at": monitor_session.started_at.isoformat() if monitor_session.started_at else None,
+                    "total": int(monitor_session.total_proxies or 0),
+                    "tested": int(monitor_session.tested_count or 0),
+                    "alive": int(monitor_session.alive_count or 0),
+                    "dead": int(monitor_session.dead_count or 0),
+                    "other": int(monitor_session.other_count or 0),
+                }
+        return jsonify({"monitor_id": monitor_id, "session": session_data, "results": results})
+    except ValueError as exc:
+        return api_error(str(exc), 400, "invalid_limit")
+    except Exception:
+        return api_error("Could not load monitor results", 500, "monitor_results_failed")
 
 
 @monitor_bp.route("/api/monitor/create", methods=["POST"])

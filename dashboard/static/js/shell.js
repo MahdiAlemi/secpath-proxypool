@@ -23,6 +23,23 @@
     document.body.dataset.activeTab = tab;
     document.title = meta.title + ' · ProxyPool';
 
+    var primary = document.getElementById('topbar-add-proxy');
+    if (primary) {
+      primary.hidden = false;
+      if (tab === 'monitor') {
+        primary.textContent = '＋ New profile';
+        primary.onclick = function () { if (typeof window.showAddMonitorForm === 'function') window.showAddMonitorForm(); };
+      } else if (tab === 'server') {
+        primary.textContent = '＋ New server';
+        primary.onclick = function () { if (typeof window.showAddServerForm === 'function') window.showAddServerForm(); };
+      } else if (tab === 'cockpit' || tab === 'proxies') {
+        primary.textContent = '＋ Add proxy';
+        primary.onclick = function () { if (typeof window.openModal === 'function') window.openModal('modal-add'); };
+      } else {
+        primary.hidden = true;
+      }
+    }
+
     if (!options || options.updateHistory !== false) {
       var url = new URL(window.location.href);
       if (tab === 'cockpit') url.searchParams.delete('tab');

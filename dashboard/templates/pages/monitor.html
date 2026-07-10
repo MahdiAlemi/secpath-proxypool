@@ -1,25 +1,153 @@
-<!-- MONITOR TAB -->
-    <div id="tab-monitor" class="tab-content {{ 'hidden' if tab!='monitor' else '' }}">
-      <div class="card monitor-center-card" style="margin-bottom:16px">
-        <div class="card-header monitor-center-header">
-          <div>
-            <div class="card-title">Validation Center <span class="health-pill">Protocol aware</span></div>
-            <div class="section-hint">Run monitor profiles to promote raw imports into real-world ready proxy pools.</div>
-          </div>
-          <button class="btn btn-primary btn-sm" onclick="showAddMonitorForm()">+ Add New Monitor Profile</button>
-        </div>
-        <div class="monitor-overview">
-          <div class="monitor-kpi"><span>Profiles</span><strong id="monitor-kpi-total">0</strong><small>configured monitors</small></div>
-          <div class="monitor-kpi"><span>Running</span><strong id="monitor-kpi-running">0</strong><small>active validation jobs</small></div>
-          <div class="monitor-kpi"><span>Paused</span><strong id="monitor-kpi-paused">0</strong><small>resume when ready</small></div>
-          <div class="monitor-kpi"><span>Candidate pool</span><strong id="monitor-kpi-proxies">0</strong><small>proxies targeted by profiles</small></div>
-        </div>
-        <div class="monitor-guidance">
-          <div><strong>Recommended flow</strong><span>Import → Monitor HTTPS/DNS/Telegram → Review Inventory → Build Server.</span></div>
-          <div id="monitor-runtime-summary">Waiting for monitor snapshot...</div>
-        </div>
-        <div id="monitors-grid" class="monitors-grid">
-          <div class="monitors-empty monitor-empty-state"><strong>No validation profiles yet.</strong><span>Create a monitor profile to test protocol reachability, HTTPS, remote DNS, Telegram, and geo data.</span><button class="btn btn-primary btn-sm" onclick="showAddMonitorForm()">Create monitor profile</button></div>
-        </div>
+<div id="tab-monitor" class="tab-content {{ 'hidden' if tab!='monitor' else '' }}">
+  <section class="validation-page" aria-labelledby="validation-title">
+    <header class="validation-heading">
+      <div>
+        <span class="page-eyebrow">Validation workspace</span>
+        <h2 id="validation-title">Know what each proxy can actually do.</h2>
+        <p>Create reusable test profiles, follow live progress, inspect the latest outcomes, and promote only verified routes into serving.</p>
       </div>
+      <div class="validation-heading-actions">
+        <button class="btn" type="button" onclick="ValidationWorkspace.refresh(true)">
+          <span aria-hidden="true">↻</span> Refresh
+        </button>
+        <button class="btn btn-primary" type="button" onclick="showAddMonitorForm()">
+          <span aria-hidden="true">＋</span> New profile
+        </button>
+      </div>
+    </header>
+
+    <div class="validation-metrics" aria-label="Validation overview">
+      <article class="validation-metric">
+        <span>Profiles</span><strong id="validation-metric-profiles">0</strong><small>Reusable validation plans</small>
+      </article>
+      <article class="validation-metric" data-tone="success">
+        <span>Active</span><strong id="validation-metric-active">0</strong><small>Running or starting now</small>
+      </article>
+      <article class="validation-metric" data-tone="warning">
+        <span>Paused</span><strong id="validation-metric-paused">0</strong><small>Sessions ready to resume</small>
+      </article>
+      <article class="validation-metric">
+        <span>Configured targets</span><strong id="validation-metric-targets">0</strong><small>Across profile filters</small>
+      </article>
     </div>
+
+    <div class="validation-workspace">
+      <aside class="validation-profile-panel" aria-label="Validation profiles">
+        <div class="validation-profile-toolbar">
+          <label class="validation-search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 20-4.35-4.35a7.5 7.5 0 1 0-1.41 1.41L19.59 21 21 20ZM5 11a6 6 0 1 1 12 0 6 6 0 0 1-12 0Z"/></svg>
+            <input id="validation-profile-search" type="search" placeholder="Find a profile" autocomplete="off" aria-label="Search validation profiles">
+          </label>
+          <select id="validation-state-filter" class="form-input validation-state-filter" aria-label="Filter profiles by state">
+            <option value="all">All states</option>
+            <option value="active">Active</option>
+            <option value="paused">Paused</option>
+            <option value="idle">Idle</option>
+            <option value="failed">Needs attention</option>
+          </select>
+        </div>
+        <div class="validation-profile-context">
+          <div><strong id="validation-profile-count">0 profiles</strong><span id="validation-profile-caption">Waiting for a snapshot</span></div>
+        </div>
+        <div id="validation-profile-list" class="validation-profile-list" role="listbox" aria-label="Monitor profiles">
+          <div class="validation-list-empty">
+            <span class="validation-empty-icon" aria-hidden="true">⌁</span>
+            <strong>No validation profiles yet</strong>
+            <p>Create a focused profile for raw imports, HTTPS readiness, Telegram, or periodic health checks.</p>
+            <button class="btn btn-primary btn-sm" type="button" onclick="showAddMonitorForm()">Create first profile</button>
+          </div>
+        </div>
+      </aside>
+
+      <section class="validation-detail-panel" aria-live="polite">
+        <div id="validation-detail-empty" class="validation-detail-empty">
+          <div class="validation-empty-visual" aria-hidden="true"><span></span><span></span><span></span></div>
+          <strong>Select a validation profile</strong>
+          <p>Its live run state, target rules, latest outcomes, and process log will appear here.</p>
+        </div>
+
+        <div id="validation-detail" class="validation-detail" hidden>
+          <header class="validation-detail-header">
+            <div class="validation-detail-title">
+              <div class="validation-state-mark" id="validation-detail-state-mark" data-state="idle"><span></span></div>
+              <div>
+                <span class="page-eyebrow" id="validation-detail-eyebrow">Profile</span>
+                <h3 id="validation-detail-name">—</h3>
+                <p id="validation-detail-summary">—</p>
+              </div>
+            </div>
+            <div class="validation-detail-actions" id="validation-detail-actions"></div>
+          </header>
+
+          <div class="validation-progress-card">
+            <div class="validation-progress-ring" id="validation-progress-ring" style="--progress:0">
+              <div><strong id="validation-progress-percent">0%</strong><span>complete</span></div>
+            </div>
+            <div class="validation-progress-copy">
+              <div class="validation-progress-heading">
+                <div><span>Latest session</span><strong id="validation-progress-state">Not run</strong></div>
+                <span id="validation-progress-timing">No runtime recorded</span>
+              </div>
+              <div class="validation-progress-track"><span id="validation-progress-bar"></span></div>
+              <div class="validation-progress-stats">
+                <div><span>Tested</span><strong id="validation-progress-tested">0 / 0</strong></div>
+                <div data-tone="success"><span>Alive</span><strong id="validation-progress-alive">0</strong></div>
+                <div data-tone="danger"><span>Dead</span><strong id="validation-progress-dead">0</strong></div>
+                <div data-tone="warning"><span>Other</span><strong id="validation-progress-other">0</strong></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="validation-detail-grid">
+            <article class="validation-section-card">
+              <div class="validation-section-heading"><div><span class="page-eyebrow">Targeting</span><h4>Profile rules</h4></div><button class="button-link" id="validation-edit-button" type="button">Edit profile</button></div>
+              <dl class="validation-rule-list">
+                <div><dt>Protocols</dt><dd id="validation-rule-protocols">All</dd></div>
+                <div><dt>Statuses</dt><dd id="validation-rule-statuses">All</dd></div>
+                <div><dt>Candidate pool</dt><dd id="validation-rule-targets">0 proxies</dd></div>
+                <div><dt>Probes</dt><dd id="validation-rule-probes">2</dd></div>
+                <div><dt>Concurrency</dt><dd id="validation-rule-threads">50 threads</dd></div>
+                <div><dt>Timeout</dt><dd id="validation-rule-timeout">5 seconds</dd></div>
+                <div><dt>Schedule</dt><dd id="validation-rule-schedule">Run once</dd></div>
+                <div><dt>Geo enrichment</dt><dd id="validation-rule-geo">Enabled</dd></div>
+              </dl>
+            </article>
+
+            <article class="validation-section-card">
+              <div class="validation-section-heading"><div><span class="page-eyebrow">Runtime</span><h4>Process health</h4></div><span class="validation-runtime-badge" id="validation-runtime-badge">Idle</span></div>
+              <dl class="validation-rule-list">
+                <div><dt>Process</dt><dd id="validation-runtime-process">No active process</dd></div>
+                <div><dt>Service</dt><dd id="validation-runtime-service">Not installed</dd></div>
+                <div><dt>Started</dt><dd id="validation-runtime-started">—</dd></div>
+                <div><dt>Finished</dt><dd id="validation-runtime-finished">—</dd></div>
+                <div><dt>Memory</dt><dd id="validation-runtime-memory">—</dd></div>
+                <div><dt>Last error</dt><dd id="validation-runtime-error">None</dd></div>
+              </dl>
+            </article>
+          </div>
+
+          <article class="validation-section-card validation-results-card">
+            <div class="validation-section-heading">
+              <div><span class="page-eyebrow">Latest outcomes</span><h4>Recently tested proxies</h4></div>
+              <span id="validation-results-caption">No session results</span>
+            </div>
+            <div class="validation-results-wrap">
+              <table class="validation-results-table">
+                <thead><tr><th>Proxy</th><th>Status</th><th>Latency</th><th>Capabilities</th><th>Location</th><th>Tested</th></tr></thead>
+                <tbody id="validation-results-body"><tr><td colspan="6" class="validation-table-empty">No results available.</td></tr></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="validation-section-card validation-log-card">
+            <div class="validation-section-heading">
+              <div><span class="page-eyebrow">Process log</span><h4>Latest monitor output</h4></div>
+              <button class="button-link" id="validation-log-refresh" type="button">Refresh log</button>
+            </div>
+            <pre id="validation-log-output" class="validation-log-output">No log output yet.</pre>
+          </article>
+        </div>
+      </section>
+    </div>
+  </section>
+</div>

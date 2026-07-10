@@ -173,3 +173,6 @@ The proxy Inventory now uses a compact, responsive table with operational filter
 ## Sources and import workspace
 
 Proxy ingestion now uses a preflight-first workspace for manual batches, public list URLs, and grouped protocol sources. Preview and execution share the same normalization engine, saved sources can be edited and rerun, and actual imports create a sanitized audit trail. See [`docs/SOURCES_UI.md`](docs/SOURCES_UI.md).
+## Validation workspace
+
+Validation profiles now use a dedicated, responsive workspace with searchable runtime states, live progress, recent credential-redacted outcomes, log inspection, and a non-mutating candidate preview before save. The monitor lifecycle remains process-safe and resumable. See [`docs/VALIDATION_UI.md`](docs/VALIDATION_UI.md).

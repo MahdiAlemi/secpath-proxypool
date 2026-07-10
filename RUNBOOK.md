@@ -350,3 +350,20 @@ bash scripts/run_dashboard.sh
 Open `http://127.0.0.1:5003/index?tab=import` and check all three input modes, preflight metrics, saved-source editing, recent history, dark mode, and a narrow viewport. Applying the overlay does not start or restart the application and is not a deployment.
 
 The first application startup after this phase creates two additive tables. Existing Proxy records are not modified. Database backups can contain saved source URLs or grouped configurations and must remain protected.
+
+## 17. Phase 7 validation workspace verification
+
+After applying the Validation overlay:
+
+```bash
+bash scripts/health_check.sh
+bash scripts/repo_hygiene_check.sh
+python3 -m compileall -q dashboard tests
+node --check dashboard/static/js/base.js
+node --check dashboard/static/js/validation.js
+python3 -m unittest -v tests.test_validation_ui
+git diff --check
+git status --short
+```
+
+For a local visual review, start the development dashboard and open `http://127.0.0.1:5003/index?tab=monitor`. Verify profile search/state filtering, selected-profile details, candidate preview, Start/Pause/Resume/Stop controls, recent results, logs, dark mode, and a narrow viewport. This is a local review only; do not deploy or restart production services.
