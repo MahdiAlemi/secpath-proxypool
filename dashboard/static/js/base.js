@@ -1693,22 +1693,34 @@ async function checkMonitorStatus() {
     card.className = 'monitor-card monitor-profile-card';
     
     var progress = m.progress || {};
-    var isPaused = !isRunning && progress && progress.paused === true;
+    var runtimeState = String(progress.state || m.session_status || m.last_state || 'idle');
+    var isPaused = !isRunning && (progress.paused === true || runtimeState === 'paused');
     
     var statusClass, statusText, statusDotClass;
-    if (isPaused) {
+    if (m.starting) {
+      statusClass = 'running';
+      statusText = 'Starting';
+      statusDotClass = 'status-flaky';
+    } else if (isPaused) {
       statusClass = 'paused';
       statusText = 'Paused';
       statusDotClass = 'status-flaky';
-      if (m.pid) statusText += ' (PID: ' + m.pid + ')';
     } else if (isRunning) {
       statusClass = 'running';
       statusText = 'Running';
       statusDotClass = 'status-alive';
       if (m.pid) statusText += ' (PID: ' + m.pid + ')';
+    } else if (runtimeState === 'completed') {
+      statusClass = 'stopped';
+      statusText = 'Completed';
+      statusDotClass = 'status-alive';
+    } else if (runtimeState === 'failed' || runtimeState === 'interrupted') {
+      statusClass = 'stopped';
+      statusText = runtimeState === 'failed' ? 'Failed' : 'Interrupted';
+      statusDotClass = 'status-dead';
     } else {
       statusClass = 'stopped';
-      statusText = 'Stopped';
+      statusText = runtimeState === 'stopped' ? 'Stopped' : 'Idle';
       statusDotClass = 'status-dead';
     }
     
@@ -1786,7 +1798,7 @@ async function checkMonitorStatus() {
       progressHtml +
       '<div class="monitor-card-footer">' +
         (isPaused ? '<button class="btn btn-sm btn-primary" onclick="resumeMonitor(\'' + mid + '\')">Resume</button>' : '') +
-        (isRunning && !isPaused && !serviceName ? '<button class="btn btn-sm" onclick="pauseMonitor(\'' + mid + '\')">Pause</button>' : '') +
+        (isRunning && !isPaused ? '<button class="btn btn-sm" onclick="pauseMonitor(\'' + mid + '\')">Pause</button>' : '') +
         (!isRunning && !isPaused ? '<button class="btn btn-sm btn-primary" onclick="startMonitor(\'' + mid + '\')">Start</button>' : '') +
         '<button class="btn btn-sm" onclick="showMonitorSettings(\'' + mid + '\')">Settings</button>' +
         (serviceName && !isRunning ? '<button class="btn btn-sm" onclick="removeMonitorService(\'' + mid + '\')">Remove Service</button>' : '') +
@@ -2132,7 +2144,7 @@ async function resumeMonitor(monitorId) {
 
 async function stopMonitor(monitorId) {
   if (!monitorId) return;
-  showConfirm('Stop Monitor', 'Kill this monitor immediately? Unfinished tests will be lost.', async function() {
+  showConfirm('Stop Monitor', 'Stop this monitor gracefully? Current progress will remain visible; starting it again begins a fresh run.', async function() {
     var res = await authFetch('/api/monitor/stop', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -2144,7 +2156,7 @@ async function stopMonitor(monitorId) {
     } else {
       showAlert('Error: ' + (result.error || 'Failed to stop monitor'));
     }
-  }, {confirmText: 'Kill', confirmClass: 'btn-danger'});
+  }, {confirmText: 'Stop', confirmClass: 'btn-danger'});
 }
 
 

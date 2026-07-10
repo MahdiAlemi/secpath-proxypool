@@ -1,8 +1,13 @@
 import os
 import json
 import secrets
+import contextlib
+import fcntl
+import tempfile
+import threading
 
-DB_PATH = "proxies.db"
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(PROJECT_ROOT, "proxies.db")
 PROTOCOLS = ["http", "https", "socks4", "socks5"]
 ROTATE_MODES = ["fixed", "per_connection", "better_cost", "time", "sticky"]
 
@@ -44,38 +49,66 @@ ALL_PERMISSIONS = [
     'users.manage'
 ]
 
-monitor_pid_file = ".monitor.pid"
-server_pid_file = ".server.pid"
-servers_config_file = ".servers.json"
-monitors_config_file = ".monitors.json"
-log_file = "dashboard.log"
+monitor_pid_file = os.path.join(PROJECT_ROOT, ".monitor.pid")
+server_pid_file = os.path.join(PROJECT_ROOT, ".server.pid")
+servers_config_file = os.path.join(PROJECT_ROOT, ".servers.json")
+monitors_config_file = os.path.join(PROJECT_ROOT, ".monitors.json")
+log_file = os.path.join(PROJECT_ROOT, "dashboard.log")
+
+
+_json_lock = threading.RLock()
+
+
+@contextlib.contextmanager
+def _file_lock(path):
+    lock_path = f"{path}.lock"
+    with open(lock_path, "a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _load_json_config(path):
+    with _json_lock, _file_lock(path):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                payload = json.load(handle)
+            return payload if isinstance(payload, dict) else {}
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return {}
+
+
+def _save_json_config(path, payload):
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    os.makedirs(directory, exist_ok=True)
+    with _json_lock, _file_lock(path):
+        fd, temp_path = tempfile.mkstemp(prefix=f".{os.path.basename(path)}.", suffix=".tmp", dir=directory)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_path, path)
+        finally:
+            try:
+                os.unlink(temp_path)
+            except FileNotFoundError:
+                pass
 
 
 def load_monitors_config():
-    if os.path.exists(monitors_config_file):
-        try:
-            with open(monitors_config_file) as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {}
+    return _load_json_config(monitors_config_file)
 
 
 def save_monitors_config(config):
-    with open(monitors_config_file, "w") as f:
-        json.dump(config, f)
+    _save_json_config(monitors_config_file, config)
 
 
 def load_servers_config():
-    if os.path.exists(servers_config_file):
-        try:
-            with open(servers_config_file) as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {}
+    return _load_json_config(servers_config_file)
 
 
 def save_servers_config(config):
-    with open(servers_config_file, "w") as f:
-        json.dump(config, f)
+    _save_json_config(servers_config_file, config)

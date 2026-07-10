@@ -79,7 +79,7 @@ def calculate_recency(last_alive):
         hours = (datetime.now(timezone.utc) - last_alive).total_seconds() / 3600
         # 24 hours = max penalty
         return min(hours / 24, 1.0)
-    except:
+    except Exception:
         return 1.0
 
 

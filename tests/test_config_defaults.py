@@ -8,6 +8,15 @@ class ConfigDefaultsTest(unittest.TestCase):
         self.assertEqual(config.DB_TYPE.lower(), 'sqlite')
         self.assertTrue(config.get_database_url().startswith('sqlite:///'))
 
+    def test_explicit_database_url_takes_precedence(self):
+        config_type = type(config)
+        previous = config_type.DATABASE_URL
+        try:
+            config_type.DATABASE_URL = 'sqlite:////tmp/proxypool-explicit.sqlite'
+            self.assertEqual(config.get_database_url(), 'sqlite:////tmp/proxypool-explicit.sqlite')
+        finally:
+            config_type.DATABASE_URL = previous
+
 
 
 

@@ -45,4 +45,6 @@ Creating a backup requires `settings.edit`. Downloading or restoring a database 
 
 ## Remaining boundaries
 
-The proxy listener and monitor lifecycle still require dedicated correctness/security phases. In particular, listener secret storage on disk/argv, public bind policy, process ownership, protocol framing, cooperative cancellation, service management, and versioned database migrations are not declared resolved by this baseline.
+The proxy listener still requires its dedicated correctness/security phase. Listener secret storage on disk/argv, public bind policy, protocol framing, upstream TLS/SNI behavior, sticky selection, and versioned database migrations are not declared resolved by this baseline.
+
+Monitor lifecycle hardening is documented separately in `docs/MONITOR_LIFECYCLE.md`. Local systemd creation/removal remains a privileged operator action and is not performed by applying an overlay.

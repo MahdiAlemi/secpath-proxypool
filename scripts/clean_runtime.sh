@@ -48,6 +48,8 @@ if [[ "$include_state" == true ]]; then
   rm -f .monitors.json .servers.json .server_config.json
   rm -f dashboard/.monitors.json dashboard/.servers.json
   rm -f progress/*.json 2>/dev/null || true
+  rm -rf .runtime
+  rm -f .monitors.json.lock .servers.json.lock
 fi
 
 if [[ "$include_db" == true ]]; then

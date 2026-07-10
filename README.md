@@ -39,6 +39,12 @@ DB_TYPE=sqlite
 SQLITE_DB_PATH=proxies.db
 ```
 
+An explicit SQLAlchemy URL takes precedence when set:
+
+```dotenv
+DATABASE_URL=sqlite:////absolute/path/to/proxies.sqlite
+```
+
 Start the dashboard:
 
 ```bash
@@ -104,6 +110,7 @@ The following are local runtime data and must not be committed:
 - `.env`
 - `proxies.db` and database backups
 - `.monitors.json`, `.servers.json`, `.server_config.json`
+- `.runtime/` and registry lock files
 - `progress/*.json`
 - logs, PID files, caches, and generated archives
 
@@ -141,3 +148,10 @@ Set independent random values for `FLASK_SECRET_KEY` and `JWT_SECRET` in `.env`.
 Browser mutations require CSRF tokens. General proxy APIs and exports redact upstream credentials. Credential-bearing export requires the `proxies.credentials` permission and `include_credentials=true`.
 
 The complete local security baseline and remaining boundaries are documented in [`docs/SECURITY.md`](docs/SECURITY.md).
+
+
+## Monitor lifecycle
+
+Monitor processes now use atomic runtime claims, exact process-identity checks, cooperative cancellation, resumable paused sessions, and accurate progress persistence. Direct subprocess and systemd starts are mutually exclusive, so enabling a service no longer launches a duplicate monitor.
+
+Operational states and recovery behavior are documented in [`docs/MONITOR_LIFECYCLE.md`](docs/MONITOR_LIFECYCLE.md).

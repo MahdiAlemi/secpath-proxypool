@@ -192,3 +192,29 @@ git status --short
 ```
 
 Before opening the dashboard, confirm either a database user exists or `DASHBOARD_PASSWORD` is intentionally configured. No deploy, service restart, or remote change is part of these steps.
+
+
+## 13. Phase 2 monitor lifecycle verification
+
+After applying the monitor lifecycle overlay:
+
+```bash
+bash scripts/health_check.sh
+bash scripts/repo_hygiene_check.sh
+python3 -m compileall -q dashboard proxy_monitor tests
+node --check dashboard/static/js/base.js
+ruff check dashboard/routes/monitor.py dashboard/config.py proxy_monitor tests/test_monitor_lifecycle.py
+git diff --check
+git status --short
+```
+
+The automated lifecycle tests use disposable runtime directories and test databases. They verify duplicate-start rejection, PID identity checks, graceful termination, partial-progress pause, and resume-to-completion.
+
+### Local monitor behavior
+
+- **Pause** cooperatively stops the current process and preserves session progress for Resume.
+- **Resume** skips proxy IDs already completed in the paused session.
+- **Stop** preserves the visible final snapshot, but the next Start creates a fresh session.
+- **Remove Service** is separate from Stop and requires root privileges.
+
+A profile configured with `create_service=yes` does not modify systemd merely because the overlay is applied. systemd is touched only when an authorized dashboard user explicitly starts or removes that service-backed profile.

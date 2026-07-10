@@ -66,3 +66,8 @@ Thumbs.db
 
 # Local safety backups created by overlay cleanup scripts
 .local-backup/
+
+# Process-safe lifecycle coordination
+.runtime/
+.monitors.json.lock
+.servers.json.lock

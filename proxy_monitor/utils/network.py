@@ -1,4 +1,3 @@
-import shlex
 
 
 def build_curl_args(proto, proxy_user, proxy_pwd, host, port, url, timeout, extra_flags=None):
