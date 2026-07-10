@@ -63,6 +63,28 @@ class ServerPreviewEndpointTest(unittest.TestCase):
                 db.engine.dispose()
 
 
+class CockpitRenderTest(unittest.TestCase):
+    def test_cockpit_route_renders(self):
+        from dashboard import create_app
+        from database import db
+        app = create_app()
+        app.config['TESTING'] = True
+        try:
+            with app.test_client() as client:
+                with client.session_transaction() as sess:
+                    sess['user'] = 'admin'
+                    sess['user_id'] = 0
+                res = client.get('/index?tab=cockpit')
+                self.assertEqual(res.status_code, 200)
+                self.assertIn(b'tab-cockpit', res.data)
+                self.assertIn(b'ProxyPool readiness overview', res.data)
+        finally:
+            if getattr(db, 'Session', None) is not None:
+                db.Session.remove()
+            if getattr(db, 'engine', None) is not None:
+                db.engine.dispose()
+
+
 class DefaultLandingTest(unittest.TestCase):
     def test_default_route_lands_on_cockpit(self):
         from dashboard import create_app
