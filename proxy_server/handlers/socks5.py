@@ -1,155 +1,108 @@
+from __future__ import annotations
+
+import hmac
+import ipaddress
 import socket
 
+from proxy_server.handlers.common import connect_selected_upstream, safe_peer_key
+from proxy_server.protocol import ProtocolError, recv_exact, socks5_bound_address
 from proxy_server.server.proxy_store import ProxyStore
-from proxy_server.utils.network import connect_via_upstream, forward_bidirectional
 from proxy_server.utils.logging import log
+from proxy_server.utils.network import forward_bidirectional
+
+
+def _reply(sock: socket.socket, code: int, bound: bytes | None = None):
+    try:
+        sock.sendall(bytes([0x05, code, 0x00]) + (bound or b"\x01\x00\x00\x00\x00\x00\x00"))
+    except OSError:
+        pass
+
+
+def _read_destination(sock: socket.socket, address_type: int):
+    if address_type == 0x01:
+        host = str(ipaddress.IPv4Address(recv_exact(sock, 4)))
+    elif address_type == 0x03:
+        length = recv_exact(sock, 1)[0]
+        if length == 0:
+            raise ProtocolError("empty SOCKS5 domain")
+        host = recv_exact(sock, length).decode("idna")
+    elif address_type == 0x04:
+        host = str(ipaddress.IPv6Address(recv_exact(sock, 16)))
+    else:
+        raise ProtocolError("unsupported SOCKS5 address type")
+    port = int.from_bytes(recv_exact(sock, 2), "big")
+    if not 1 <= port <= 65535:
+        raise ProtocolError("invalid SOCKS5 destination port")
+    return host, port
 
 
 def handle_socks5_client(client_sock: socket.socket, store: ProxyStore, cid: int):
-    client_sock.settimeout(10)
+    args = store.args
+    client_sock.settimeout(float(getattr(args, "timeout", 10)))
+    client_key = safe_peer_key(client_sock)
+    upstream_sock = None
     try:
-        hdr = client_sock.recv(2)
-        if len(hdr) < 2:
-            client_sock.close()
+        version, method_count = recv_exact(client_sock, 2)
+        if version != 5 or method_count == 0:
+            raise ProtocolError("invalid SOCKS5 greeting")
+        methods = set(recv_exact(client_sock, method_count))
+        requires_auth = bool(getattr(args, "username", None) or getattr(args, "password", None))
+        selected = 0x02 if requires_auth and 0x02 in methods else 0x00 if not requires_auth and 0x00 in methods else 0xFF
+        client_sock.sendall(bytes([0x05, selected]))
+        if selected == 0xFF:
             return
-        ver, nmethods = hdr[0], hdr[1]
-        if ver != 5:
-            client_sock.close()
-            return
-        methods = client_sock.recv(nmethods)
 
-        args = store.args
-        server_requires_auth = (args.username is not None and args.password is not None)
-        method = 0xFF
-        if server_requires_auth:
-            if 0x02 in methods:
-                method = 0x02
-            else:
-                client_sock.sendall(bytes([5, 0xFF]))
-                client_sock.close()
+        if selected == 0x02:
+            auth_version, username_length = recv_exact(client_sock, 2)
+            if auth_version != 1:
+                client_sock.sendall(b"\x01\x01")
                 return
-        else:
-            if 0x00 in methods:
-                method = 0x00
-            elif 0x02 in methods:
-                method = 0x02
-
-        client_sock.sendall(bytes([5, method]))
-
-        if method == 0x02:
-            hdr2 = client_sock.recv(2)
-            if len(hdr2) < 2:
-                client_sock.close()
+            username = recv_exact(client_sock, username_length).decode("utf-8", errors="replace")
+            password_length = recv_exact(client_sock, 1)[0]
+            password = recv_exact(client_sock, password_length).decode("utf-8", errors="replace")
+            valid = hmac.compare_digest(username, str(getattr(args, "username", "") or "")) and hmac.compare_digest(
+                password, str(getattr(args, "password", "") or "")
+            )
+            client_sock.sendall(b"\x01\x00" if valid else b"\x01\x01")
+            if not valid:
                 return
-            ver2, ulen = hdr2[0], hdr2[1]
-            uname = client_sock.recv(ulen).decode(errors="ignore")
-            plen_b = client_sock.recv(1)
-            plen = plen_b[0] if plen_b else 0
-            passwd = client_sock.recv(plen).decode(errors="ignore")
 
-            if server_requires_auth:
-                if (uname == args.username) and (passwd == args.password):
-                    client_sock.sendall(b"\x01\x00")
-                else:
-                    client_sock.sendall(b"\x01\x01")
-                    client_sock.close()
-                    return
-            else:
-                client_sock.sendall(b"\x01\x00")
-
-        req_head = client_sock.recv(4)
-        if len(req_head) < 4:
-            client_sock.close()
+        version, command, reserved, address_type = recv_exact(client_sock, 4)
+        if version != 5 or reserved != 0:
+            raise ProtocolError("invalid SOCKS5 request")
+        if command != 1:
+            _reply(client_sock, 0x07)
             return
-        ver, cmd, rsv, atyp = req_head[0], req_head[1], req_head[2], req_head[3]
-        if ver != 5 or cmd != 1:
-            client_sock.sendall(b"\x05\x07\x00\x01\x00\x00\x00\x00\x00\x00")
-            client_sock.close()
+        try:
+            dest_host, dest_port = _read_destination(client_sock, address_type)
+        except ProtocolError:
+            _reply(client_sock, 0x08)
             return
-
-        if atyp == 1:
-            addr = client_sock.recv(4)
-            dest_host = socket.inet_ntoa(addr)
-        elif atyp == 3:
-            alen_b = client_sock.recv(1)
-            alen = alen_b[0]
-            domain = client_sock.recv(alen).decode(errors="ignore")
-            dest_host = domain
-        elif atyp == 4:
-            addr = client_sock.recv(16)
-            dest_host = socket.inet_ntop(socket.AF_INET6, addr)
-        else:
-            client_sock.sendall(b"\x05\x08\x00\x01\x00\x00\x00\x00\x00\x00")
-            client_sock.close()
-            return
-        port_bytes = client_sock.recv(2)
-        dest_port = int.from_bytes(port_bytes, "big")
-
-        up = store.select()
-        if up is None:
-            client_sock.sendall(b"\x05\x01\x00\x01\x00\x00\x00\x00\x00\x00")
-            client_sock.close()
-            return
-
-        up_ip, up_port, up_proto = up.get("ip"), up.get("port"), up.get("protocol")
-        up_user = up.get("username") or ""
-        up_pass = up.get("password") or ""
-        log("[CONN#{0}] {1} -> upstream {2} {3}:{4} (cost={5})", cid, client_sock.getpeername()[0], up_proto, up_ip, up_port, up.get("cost"))
 
         try:
-            upstream_sock = connect_via_upstream(up_ip, up_port, up_proto, dest_host, dest_port, timeout=10, up_user=up_user, up_pass=up_pass)
-        except Exception as e:
-            log("[CONN#{0}] upstream connect failed: {1}", cid, e)
-            store.mark_fail(up)
-            if store.args.rotate == "better_cost":
-                retry = store.select(force=True)
-                if retry and retry.get("id") != up.get("id"):
-                    try:
-                        r_ip = retry.get("ip")
-                        r_port = retry.get("port")
-                        r_proto = retry.get("protocol")
-                        r_user = retry.get("username") or ""
-                        r_pass = retry.get("password") or ""
-                        upstream_sock = connect_via_upstream(r_ip, r_port, r_proto, dest_host, dest_port, timeout=10, up_user=r_user, up_pass=r_pass)
-                        store.mark_alive(retry)
-                        up = retry
-                        log("[CONN#{0}] retry succeeded -> {1}:{2}", cid, retry.get("ip"), retry.get("port"))
-                    except Exception as e2:
-                        log("[CONN#{0}] retry failed: {1}", cid, e2)
-                        try:
-                            client_sock.sendall(b"\x05\x04\x00\x01\x00\x00\x00\x00\x00\x00")
-                        except:
-                            pass
-                        client_sock.close()
-                        return
-                else:
-                    try:
-                        client_sock.sendall(b"\x05\x04\x00\x01\x00\x00\x00\x00\x00\x00")
-                    except:
-                        pass
-                    client_sock.close()
-                    return
-            else:
-                try:
-                    client_sock.sendall(b"\x05\x04\x00\x01\x00\x00\x00\x00\x00\x00")
-                except:
-                    pass
-                client_sock.close()
-                return
-
-        try:
-            client_sock.sendall(b"\x05\x00\x00\x01" + socket.inet_aton("0.0.0.0") + (0).to_bytes(2, "big"))
+            upstream_sock, _ = connect_selected_upstream(store, client_key, dest_host, dest_port, cid)
+        except OSError as exc:
+            code = 0x05 if getattr(exc, "errno", None) in {111, 61, 10061} else 0x04
+            _reply(client_sock, code)
+            return
         except Exception:
-            upstream_sock.close()
-            client_sock.close()
+            _reply(client_sock, 0x04)
             return
 
-        store.mark_alive(up)
+        _reply(client_sock, 0x00, socks5_bound_address(upstream_sock))
         forward_bidirectional(client_sock, upstream_sock)
-
-    except Exception as e:
-        log("[CONN#{0}] socks5 handler error: {1}", cid, e)
+        upstream_sock = None
+    except ProtocolError as exc:
+        log("[CONN#{0}] invalid SOCKS5 request: {1}", cid, exc)
+    except Exception as exc:
+        log("[CONN#{0}] SOCKS5 handler error: {1}", cid, exc)
+    finally:
+        if upstream_sock is not None:
+            try:
+                upstream_sock.close()
+            except OSError:
+                pass
         try:
             client_sock.close()
-        except:
+        except OSError:
             pass

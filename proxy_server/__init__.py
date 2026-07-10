@@ -1,3 +1,3 @@
-from proxy_server.app import main
+"""Proxy serving package."""
 
-__all__ = ["main"]
+__all__ = []

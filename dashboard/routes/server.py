@@ -1,17 +1,25 @@
 import os
 import subprocess
 import sys
-import signal
-import time
-import psutil
+import ipaddress
+import contextlib
 
-from flask import Blueprint, request, jsonify, Response
+from flask import Blueprint, request, jsonify
 
 from dashboard.decorators import login_required, require_permission
 from dashboard.proxy_scope import apply_proxy_scope, public_proxy_dict
 from dashboard.security import api_error
 from dashboard.config import PROTOCOLS, ROTATE_MODES, load_servers_config, save_servers_config
 from dashboard.utils.process import get_server_status
+from proxy_server.lifecycle import (
+    atomic_write_json as write_runtime_json,
+    profile_path as server_profile_path,
+    release as release_server_claim,
+    reserve_start as reserve_server_start,
+    snapshot as server_snapshot,
+    terminate as terminate_server,
+    wait_until_claimed,
+)
 from dashboard.utils.helpers import log
 
 server_bp = Blueprint('server', __name__)
@@ -23,6 +31,7 @@ _BOOL_FIELDS = {
     "require_remote_dns",
     "require_telegram",
     "readonly",
+    "allow_public_no_auth",
 }
 _OPTIONAL_BOOL_TEXT_FIELDS = {"mobile", "proxy", "hosting"}
 _TEXT_FIELDS = {
@@ -75,6 +84,16 @@ def _parse_bool(value, field):
     raise ValueError(f"{field} must be a boolean")
 
 
+def _is_local_bind(value):
+    normalized = str(value or "").strip().lower().strip("[]")
+    if normalized == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
 def _normalize_server_config(data, *, existing=None):
     if not isinstance(data, dict):
         raise ValueError("A JSON object is required")
@@ -103,6 +122,9 @@ def _normalize_server_config(data, *, existing=None):
     for field, default, minimum, maximum, cast in (
         ("rotate_interval", 60, 1, 86400, int),
         ("min_cost", 0.0, 0.0, 1_000_000.0, float),
+        ("threads", 100, 1, 1000, int),
+        ("timeout", 10.0, 1.0, 300.0, float),
+        ("header_limit", 65536, 4096, 1048576, int),
     ):
         try:
             number = cast(normalized.get(field, default))
@@ -156,6 +178,21 @@ def _normalize_server_config(data, *, existing=None):
         if data.get("password") in (None, ""):
             result["password"] = existing.get("password")
 
+    has_username = bool(result.get("username"))
+    has_password = bool(result.get("password"))
+    if protocol != "socks4" and has_username != has_password:
+        raise ValueError("listener username and password must be configured together")
+    if protocol == "socks4" and has_password:
+        raise ValueError("SOCKS4 listener authentication supports UserID only; leave password empty")
+    if bool(result.get("certfile")) != bool(result.get("keyfile")):
+        raise ValueError("certfile and keyfile must be configured together")
+    if result.get("cost_threshold") is not None and result["cost_threshold"] < result["min_cost"]:
+        raise ValueError("cost_threshold cannot be lower than min_cost")
+    if not _is_local_bind(bind) and not (has_username or result.get("allow_public_no_auth")):
+        raise ValueError(
+            "unauthenticated listeners beyond loopback are blocked; configure credentials or explicitly allow public no-auth"
+        )
+
     return result
 
 
@@ -168,28 +205,13 @@ def _public_server_config(value):
     return data
 
 
-@server_bp.route("/api/server/log/stream", methods=["GET"])
-@login_required
-@require_permission("server.view")
-def api_server_log_stream():
-    import time
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    root_dir = os.path.dirname(os.path.dirname(base_dir))
-    log_file = os.path.join(root_dir, "server.log")
-    
-    def generate():
-        last_pos = 0
-        while True:
-            if os.path.exists(log_file):
-                with open(log_file, "r") as f:
-                    f.seek(last_pos)
-                    new_lines = f.readlines()
-                    last_pos = f.tell()
-                    for line in new_lines:
-                        yield f"data: {line}"
-            time.sleep(1)
-    
-    return Response(generate(), mimetype='text/event-stream')
+def _project_root():
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _remove_runtime_profile(port):
+    with contextlib.suppress(FileNotFoundError, OSError, ValueError):
+        os.unlink(server_profile_path(_project_root(), str(port)))
 
 
 @server_bp.route("/api/server", methods=["GET"])
@@ -199,6 +221,7 @@ def api_server_status():
     try:
         config = load_servers_config()
         servers = {}
+        config_dirty = False
         for port_key, conf in config.items():
             try:
                 port = str(_parse_port(port_key))
@@ -209,12 +232,14 @@ def api_server_status():
                 servers[port] = status
                 if not status.get("running") and conf.get("pid"):
                     conf["pid"] = None
-                    save_servers_config(config)
+                    conf["process_create_time"] = None
+                    config_dirty = True
                 servers[port]["protocol"] = conf.get("protocol", "http")
                 servers[port]["config"] = _public_server_config(conf.get("config", {}))
             except Exception:
                 servers[port] = {"running": False, "error": "Server status unavailable"}
-        
+        if config_dirty:
+            save_servers_config(config)
         return jsonify({"servers": servers})
     except Exception:
         return api_error("Could not read server status", 500, "server_status_failed")
@@ -340,26 +365,17 @@ def api_server_update():
 
         existing = config[port].get("config", {})
         normalized = _normalize_server_config(data, existing=existing)
-        pid = config[port].get("pid")
-        was_running = False
-        if pid:
-            try:
-                was_running = psutil.pid_exists(int(pid))
-            except (TypeError, ValueError):
-                was_running = False
-        if was_running:
-            try:
-                os.kill(int(pid), signal.SIGTERM)
-                time.sleep(1)
-                if psutil.pid_exists(int(pid)):
-                    os.kill(int(pid), signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
+        status = server_snapshot(_project_root(), port)
+        if status["running"]:
+            termination = terminate_server(_project_root(), port)
+            if not termination.get("stopped"):
+                return api_error("Server did not stop cleanly; profile was not changed", 409, "server_stop_failed")
 
-        config[port] = {"pid": None, "protocol": normalized["protocol"], "config": normalized}
+        config[port] = {"pid": None, "process_create_time": None, "protocol": normalized["protocol"], "config": normalized}
         save_servers_config(config)
+        _remove_runtime_profile(port)
         log(f"Server profile updated on port {port}")
-        return jsonify({"success": True, "port": port, "protocol": normalized["protocol"], "was_running": was_running})
+        return jsonify({"success": True, "port": port, "protocol": normalized["protocol"], "was_running": status["running"]})
     except ValueError as exc:
         return api_error(str(exc), 400, "invalid_server_config")
     except Exception:
@@ -380,123 +396,67 @@ def api_server_start():
         source = saved if saved and not data.get("config") and set(data) <= {"port"} else data
         normalized = _normalize_server_config(source, existing=saved or None)
         normalized["port"] = int(port)
-        data = normalized
     except ValueError as exc:
         return api_error(str(exc), 400, "invalid_server_config")
 
-    if port in config and config[port].get("pid"):
-        pid = config[port]["pid"]
-        try:
-            pid_int = int(pid)
-            if psutil.pid_exists(pid_int):
-                os.kill(pid_int, signal.SIGTERM)
-                time.sleep(1)
-                if psutil.pid_exists(pid_int):
-                    os.kill(pid_int, signal.SIGKILL)
-        except (TypeError, ValueError, ProcessLookupError, PermissionError):
-            pass
-
-    config.pop(port, None)
-    save_servers_config(config)
-
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    root_dir = os.path.dirname(os.path.dirname(base_dir))
+    root_dir = _project_root()
     server_path = os.path.join(root_dir, "proxy_server", "app.py")
     log_file = os.path.join(root_dir, f"server_{port}.log")
-
-    args_list = [
-        "--protocol", data.get("protocol", "http"),
-        "--bind", data.get("bind", "0.0.0.0"),
-        "--listen_port", str(data.get("port", 8080)),
-        "--rotate", data.get("rotate", "better_cost"),
-    ]
-
-    if data.get("rotate_interval"):
-        args_list.extend(["--rotate_interval", str(data["rotate_interval"])])
-    if data.get("min_cost"):
-        args_list.extend(["--min_cost", str(data["min_cost"])])
-    if data.get("cost_threshold"):
-        args_list.extend(["--cost_threshold", str(data["cost_threshold"])])
-
-    if data.get("auth_required"):
-        args_list.extend(["--auth_required", data["auth_required"]])
-    if data.get("username") and data.get("password"):
-        args_list.extend(["--username", data["username"], "--password", data["password"]])
-
-    if data.get("certfile"):
-        args_list.extend(["--certfile", data["certfile"]])
-    if data.get("keyfile"):
-        args_list.extend(["--keyfile", data["keyfile"]])
-
-    if data.get("insecure_upstream"):
-        args_list.append("--insecure_upstream")
-    if data.get("sticky_upstream"):
-        args_list.extend(["--sticky_upstream", data["sticky_upstream"]])
-    if data.get("upstream_protocol"):
-        args_list.extend(["--upstream_protocol", data["upstream_protocol"]])
-    if data.get("candidate_statuses"):
-        args_list.extend(["--candidate_statuses", data["candidate_statuses"]])
-    if data.get("require_web_https"):
-        args_list.append("--require_web_https")
-    if data.get("require_remote_dns"):
-        args_list.append("--require_remote_dns")
-    if data.get("require_telegram"):
-        args_list.append("--require_telegram")
-
-    if data.get("countryCodes"):
-        args_list.extend(["--countryCodes", data["countryCodes"]])
-    if data.get("regions"):
-        args_list.extend(["--regions", data["regions"]])
-    if data.get("cities"):
-        args_list.extend(["--cities", data["cities"]])
-    if data.get("orgs"):
-        args_list.extend(["--orgs", data["orgs"]])
-    if data.get("isp"):
-        args_list.extend(["--isp", data["isp"]])
-    if data.get("asn"):
-        args_list.extend(["--asn", data["asn"]])
-    if data.get("continentCode"):
-        args_list.extend(["--continentCode", data["continentCode"]])
-    if data.get("zip_codes"):
-        args_list.extend(["--zip_codes", data["zip_codes"]])
-    if data.get("timezones"):
-        args_list.extend(["--timezones", data["timezones"]])
-    if data.get("mobile"):
-        args_list.extend(["--mobile", data["mobile"]])
-    if data.get("proxy"):
-        args_list.extend(["--proxy", data["proxy"]])
-    if data.get("hosting"):
-        args_list.extend(["--hosting", data["hosting"]])
-
-    if data.get("readonly") is not None:
-        if data["readonly"]:
-            args_list.append("--readonly")
+    profile = server_profile_path(root_dir, port)
 
     try:
-        # Security: never build a shell command from user-controlled values.
-        # Popen(list, shell=False) passes each argument literally and prevents shell injection.
-        cmd = [sys.executable, "-u", server_path] + args_list
+        try:
+            token = reserve_server_start(root_dir, port)
+        except RuntimeError as exc:
+            return api_error(str(exc), 409, "server_running")
+        write_runtime_json(profile, normalized, mode=0o600)
+        cmd = [
+            sys.executable,
+            "-u",
+            server_path,
+            "--server-id",
+            port,
+            "--claim-token",
+            token,
+            "--config-file",
+            str(profile),
+        ]
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
-        log_handle = open(log_file, "ab", buffering=0)
-        proc = subprocess.Popen(
-            cmd,
-            cwd=root_dir,
-            stdout=log_handle,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
-            close_fds=True,
-        )
-        actual_pid = str(proc.pid)
-        time.sleep(0.5)
-        if proc.poll() is None:
-            config = load_servers_config()
-            config[port] = {"pid": actual_pid, "protocol": data.get("protocol", "http"), "config": data}
-            save_servers_config(config)
-            log(f"Server started on port {port} with PID {actual_pid}")
-            return jsonify({"success": True, "pid": int(actual_pid), "port": port})
-        return jsonify({"success": False, "error": f"Server exited immediately. Check {os.path.basename(log_file)}"})
+        with open(log_file, "ab", buffering=0) as log_handle:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=root_dir,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                close_fds=True,
+            )
+
+        claimed = wait_until_claimed(root_dir, port, proc.pid, timeout=3.0)
+        if claimed is None or proc.poll() is not None:
+            with contextlib.suppress(Exception):
+                terminate_server(root_dir, port, grace_seconds=1)
+            _remove_runtime_profile(port)
+            return api_error(
+                f"Server exited during startup. Check {os.path.basename(log_file)}",
+                500,
+                "server_start_failed",
+            )
+
+        config = load_servers_config()
+        config[port] = {
+            "pid": proc.pid,
+            "process_create_time": claimed.get("process_create_time"),
+            "protocol": normalized["protocol"],
+            "config": normalized,
+        }
+        save_servers_config(config)
+        log(f"Server started on port {port} with PID {proc.pid}")
+        return jsonify({"success": True, "pid": proc.pid, "port": port})
     except Exception:
+        release_server_claim(root_dir, port)
+        _remove_runtime_profile(port)
         return api_error("Could not start server", 500, "server_start_failed")
 
 
@@ -511,24 +471,19 @@ def api_server_stop():
         port = str(_parse_port(data.get("port")))
     except ValueError as exc:
         return api_error(str(exc), 400, "invalid_server_config")
-    
+
     config = load_servers_config()
-    
-    if port in config:
-        pid = config[port].get("pid")
-        if pid:
-            try:
-                os.kill(int(pid), signal.SIGTERM)
-                time.sleep(1)
-                if psutil.pid_exists(int(pid)):
-                    os.kill(int(pid), signal.SIGKILL)
-            except Exception:
-                pass
-        config[port]["pid"] = None
-        save_servers_config(config)
-        log(f"Server stopped on port {port}")
-        return jsonify({"success": True, "port": port})
-    return api_error(f"No server running on port {port}", 404, "not_found")
+    if port not in config:
+        return api_error(f"No server profile on port {port}", 404, "not_found")
+    result = terminate_server(_project_root(), port)
+    if not result.get("stopped"):
+        return api_error("Server did not stop cleanly", 409, "server_stop_failed")
+    config[port]["pid"] = None
+    config[port]["process_create_time"] = None
+    save_servers_config(config)
+    _remove_runtime_profile(port)
+    log(f"Server stopped on port {port}")
+    return jsonify({"success": True, "port": port, "graceful": result["graceful"], "killed": result["killed"]})
 
 
 @server_bp.route("/api/server/delete", methods=["POST"])
@@ -542,22 +497,18 @@ def api_server_delete():
         port = str(_parse_port(data.get("port")))
     except ValueError as exc:
         return api_error(str(exc), 400, "invalid_server_config")
-    
+
     config = load_servers_config()
-    
-    if port in config:
-        pid = config[port].get("pid")
-        if pid:
-            try:
-                if psutil.pid_exists(int(pid)):
-                    return api_error("Server is running. Stop it first.", 409, "server_running")
-            except Exception:
-                pass
-        del config[port]
-        save_servers_config(config)
-        log(f"Server profile deleted on port {port}")
-        return jsonify({"success": True, "port": port})
-    return api_error(f"No server profile on port {port}", 404, "not_found")
+    if port not in config:
+        return api_error(f"No server profile on port {port}", 404, "not_found")
+    if server_snapshot(_project_root(), port)["running"]:
+        return api_error("Server is running. Stop it first.", 409, "server_running")
+    del config[port]
+    save_servers_config(config)
+    release_server_claim(_project_root(), port)
+    _remove_runtime_profile(port)
+    log(f"Server profile deleted on port {port}")
+    return jsonify({"success": True, "port": port})
 
 
 @server_bp.route("/api/server/log", methods=["GET"])

@@ -218,3 +218,60 @@ The automated lifecycle tests use disposable runtime directories and test databa
 - **Remove Service** is separate from Stop and requires root privileges.
 
 A profile configured with `create_service=yes` does not modify systemd merely because the overlay is applied. systemd is touched only when an authorized dashboard user explicitly starts or removes that service-backed profile.
+
+## 14. Phase 3 proxy server core verification
+
+After applying the proxy server core overlay:
+
+```bash
+bash scripts/health_check.sh
+bash scripts/repo_hygiene_check.sh
+python3 -m compileall -q dashboard proxy_server tests
+node --check dashboard/static/js/base.js
+ruff check proxy_server dashboard/routes/server.py dashboard/utils/process.py tests/test_proxy_server_core.py
+git diff --check
+git status --short
+```
+
+### Listener exposure rule
+
+The safe default is:
+
+```text
+127.0.0.1
+```
+
+A bind on `0.0.0.0`, `::`, a LAN address, or another non-loopback address requires listener authentication. The dashboard contains a separate **Public no-auth** override, but enabling it intentionally creates an open proxy for every reachable client and is not recommended.
+
+### Runtime files
+
+Active server profiles use protected files under:
+
+```text
+.runtime/servers/
+```
+
+Do not copy, publish, or commit those files. Listener credentials are not included in the child process command line. Stopping or deleting the profile removes its runtime profile file.
+
+### Local protocol checks
+
+For a loopback HTTP listener on port `8080`:
+
+```bash
+curl -v -x http://127.0.0.1:8080 http://example.com/
+curl -v -x http://127.0.0.1:8080 https://example.com/
+```
+
+For an authenticated HTTP listener:
+
+```bash
+curl -v -x http://USER:PASSWORD@127.0.0.1:8080 https://example.com/
+```
+
+For SOCKS5 with proxy-side DNS:
+
+```bash
+curl -v --proxy socks5h://127.0.0.1:1080 https://example.com/
+```
+
+These commands generate traffic and may update upstream health counters unless the server profile is configured as read-only. They are local operator checks, not deployment steps.

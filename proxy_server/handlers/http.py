@@ -1,244 +1,232 @@
+from __future__ import annotations
+
 import base64
+import hmac
 import socket
-import ssl
 from urllib.parse import urlsplit
 
+from proxy_server.handlers.common import connect_selected_upstream, safe_peer_key
+from proxy_server.protocol import ProtocolError, parse_authority, recv_until
 from proxy_server.server.proxy_store import ProxyStore
-from proxy_server.utils.network import connect_via_upstream, forward_bidirectional
 from proxy_server.utils.logging import log
+from proxy_server.utils.network import forward_bidirectional, open_upstream_proxy
 
 
-def _parse_http_headers(hdr_text: str):
-    headers = {}
-    for line in hdr_text.splitlines()[1:]:
-        if ":" not in line:
+_HOP_BY_HOP = {
+    "proxy-authorization",
+    "proxy-authenticate",
+    "proxy-connection",
+    "connection",
+    "keep-alive",
+    "te",
+    "upgrade",
+}
+
+
+def _parse_headers(header_bytes: bytes):
+    text = header_bytes.decode("iso-8859-1", errors="strict")
+    lines = text.split("\r\n")
+    if not lines or not lines[0]:
+        raise ProtocolError("empty HTTP request")
+    request_parts = lines[0].split(None, 2)
+    if len(request_parts) != 3 or request_parts[2] not in {"HTTP/1.0", "HTTP/1.1"}:
+        raise ProtocolError("invalid HTTP request line")
+    headers = []
+    lookup = {}
+    for line in lines[1:]:
+        if not line:
             continue
-        k, v = line.split(":", 1)
-        headers[k.strip().lower()] = v.strip()
-    return headers
+        if line[:1] in {" ", "\t"} or ":" not in line:
+            raise ProtocolError("invalid HTTP header")
+        name, value = line.split(":", 1)
+        name = name.strip()
+        value = value.strip()
+        if not name or any(ord(char) <= 32 or ord(char) >= 127 for char in name):
+            raise ProtocolError("invalid HTTP header name")
+        headers.append((name, value))
+        lookup[name.lower()] = value
+    return request_parts, headers, lookup
 
 
-def _check_http_proxy_auth(headers: dict, args):
-    if args.username is None or args.password is None:
+def _send_response(sock, status: int, reason: str, extra_headers=None):
+    lines = [f"HTTP/1.1 {status} {reason}", "Content-Length: 0", "Connection: close"]
+    for name, value in extra_headers or []:
+        lines.append(f"{name}: {value}")
+    try:
+        sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("ascii"))
+    except OSError:
+        pass
+
+
+def _check_listener_auth(headers: dict, args) -> bool:
+    expected_user = getattr(args, "username", None)
+    expected_password = getattr(args, "password", None)
+    if not expected_user and not expected_password:
         return True
     auth = headers.get("proxy-authorization")
     if not auth:
         return False
-    parts = auth.split(None, 1)
-    if len(parts) != 2:
-        return False
-    scheme, token = parts
-    if scheme.lower() != "basic":
+    scheme, _, token = auth.partition(" ")
+    if scheme.lower() != "basic" or not token:
         return False
     try:
-        decoded = base64.b64decode(token).decode(errors="ignore")
-    except Exception:
+        decoded = base64.b64decode(token, validate=True).decode("utf-8")
+        username, password = decoded.split(":", 1)
+    except (ValueError, UnicodeError):
         return False
-    if ":" not in decoded:
-        return False
-    u, p = decoded.split(":", 1)
-    return (u == args.username and p == args.password)
+    return hmac.compare_digest(username, str(expected_user or "")) and hmac.compare_digest(
+        password, str(expected_password or "")
+    )
+
+
+def _clean_headers(headers, *, upstream_authorization=None):
+    connection_tokens = set()
+    for name, value in headers:
+        if name.lower() == "connection":
+            connection_tokens.update(token.strip().lower() for token in value.split(","))
+    result = []
+    for name, value in headers:
+        lowered = name.lower()
+        if lowered in _HOP_BY_HOP or lowered in connection_tokens:
+            continue
+        result.append((name, value))
+    if upstream_authorization:
+        result.append(("Proxy-Authorization", upstream_authorization))
+    result.append(("Connection", "close"))
+    return result
+
+
+def _serialize_request(method, target, version, headers, body):
+    lines = [f"{method} {target} {version}"]
+    lines.extend(f"{name}: {value}" for name, value in headers)
+    return ("\r\n".join(lines) + "\r\n\r\n").encode("iso-8859-1") + body
+
+
+def _destination(method, target, headers):
+    if method == "CONNECT":
+        host, port = parse_authority(target)
+        return host, port, target, True
+
+    parsed = urlsplit(target)
+    if parsed.scheme:
+        if parsed.scheme.lower() != "http":
+            raise ProtocolError("HTTPS requests must use CONNECT")
+        if not parsed.hostname:
+            raise ProtocolError("absolute HTTP target has no host")
+        host = parsed.hostname
+        port = parsed.port or 80
+        origin_target = parsed.path or "/"
+        if parsed.query:
+            origin_target += "?" + parsed.query
+        return host, port, origin_target, False
+
+    host_header = headers.get("host")
+    if not host_header:
+        raise ProtocolError("Host header is required")
+    host, port = parse_authority(host_header, default_port=80)
+    return host, port, target or "/", False
+
+
+def _upstream_proxy_auth(upstream):
+    username = upstream.get("username") or ""
+    password = upstream.get("password") or ""
+    if not username and not password:
+        return None
+    return "Basic " + base64.b64encode(f"{username}:{password}".encode()).decode()
 
 
 def handle_http_client(client_sock: socket.socket, store: ProxyStore, cid: int):
-    client_sock.settimeout(10)
     args = store.args
+    client_sock.settimeout(float(getattr(args, "timeout", 10)))
+    client_key = safe_peer_key(client_sock)
+    upstream_sock = None
     try:
-        data = b""
-        while b"\r\n\r\n" not in data:
-            chunk = client_sock.recv(4096)
-            if not chunk:
-                client_sock.close()
-                return
-            data += chunk
-            if len(data) > 64 * 1024:
-                break
+        header_bytes, body = recv_until(client_sock, b"\r\n\r\n", int(getattr(args, "header_limit", 65536)))
+        (method, target, version), headers, lookup = _parse_headers(header_bytes)
+        method = method.upper()
 
-        header = data.split(b"\r\n\r\n", 1)[0].decode(errors="ignore")
-        lines = header.splitlines()
-        first = lines[0] if lines else ""
-        parts = first.split()
-        if len(parts) < 2:
-            client_sock.close()
-            return
-        method = parts[0].upper()
-        target = parts[1]
-        headers = _parse_http_headers(header)
-
-        if not _check_http_proxy_auth(headers, args):
-            resp = "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"proxy\"\r\nContent-Length:0\r\n\r\n"
-            try:
-                client_sock.sendall(resp.encode())
-            except:
-                pass
-            client_sock.close()
+        if not _check_listener_auth(lookup, args):
+            _send_response(
+                client_sock,
+                407,
+                "Proxy Authentication Required",
+                [("Proxy-Authenticate", 'Basic realm="ProxyPool"')],
+            )
             return
 
-        up = store.select()
-        if up is None:
-            client_sock.sendall(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length:0\r\n\r\n")
-            client_sock.close()
-            return
-
-        up_ip = up.get("ip")
-        up_port = int(up.get("port"))
-        up_proto = (up.get("protocol") or "").lower()
-        up_user = up.get("username") or None
-        up_pass = up.get("password") or None
-
-        try:
-            peer = client_sock.getpeername()[0]
-        except Exception:
-            peer = "?"
-        log("[CONN#{0}] {1} -> upstream {2} {3}:{4} (cost={5})", cid, peer, up_proto, up_ip, up_port, up.get("cost"))
-
-        if method == "CONNECT":
-            if ":" in target:
-                dest_host, dest_port_s = target.split(":", 1)
-                dest_port = int(dest_port_s)
-            else:
-                client_sock.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length:0\r\n\r\n")
-                client_sock.close()
-                return
-
+        dest_host, dest_port, origin_target, is_connect = _destination(method, target, lookup)
+        if is_connect:
             try:
-                upstream_sock = connect_via_upstream(up_ip, up_port, up_proto, dest_host, dest_port, timeout=10, up_user=up_user, up_pass=up_pass)
-            except Exception as e:
-                log("[CONN#{0}] http upstream (CONNECT) failed: {1}", cid, e)
-                store.mark_fail(up)
-                client_sock.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length:0\r\n\r\n")
-                client_sock.close()
-                return
-
-            try:
-                client_sock.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                upstream_sock, _ = connect_selected_upstream(store, client_key, dest_host, dest_port, cid)
             except Exception:
-                upstream_sock.close()
-                client_sock.close()
+                _send_response(client_sock, 502, "Bad Gateway")
                 return
-
-            store.mark_alive(up)
+            client_sock.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            if body:
+                upstream_sock.sendall(body)
             forward_bidirectional(client_sock, upstream_sock)
+            upstream_sock = None
             return
 
-        dest_host = None
-        dest_port = 80
-        path = target
-        if target.startswith("http://") or target.startswith("https://"):
-            parsed = urlsplit(target)
-            dest_host = parsed.hostname
-            dest_port = parsed.port or (443 if parsed.scheme == "https" else 80)
-            path = parsed.path or "/"
-            if parsed.query:
-                path += "?" + parsed.query
-        else:
-            host_hdr = headers.get("host")
-            if host_hdr:
-                if ":" in host_hdr:
-                    h, p = host_hdr.split(":", 1)
-                    dest_host = h
-                    try:
-                        dest_port = int(p)
-                    except Exception:
-                        dest_port = 80
+        # Normal HTTP requests either traverse a SOCKS tunnel to the destination
+        # or are forwarded in absolute-form to an HTTP(S) upstream proxy.
+        upstream = store.select(client_key=client_key)
+        if upstream is None:
+            _send_response(client_sock, 503, "Service Unavailable")
+            return
+        up_protocol = str(upstream.get("protocol") or "").lower()
+
+        if up_protocol in {"socks4", "socks5"}:
+            try:
+                upstream_sock, _ = connect_selected_upstream(store, client_key, dest_host, dest_port, cid)
+            except Exception:
+                _send_response(client_sock, 502, "Bad Gateway")
+                return
+            clean = _clean_headers(headers)
+            upstream_sock.sendall(_serialize_request(method, origin_target, version, clean, body))
+        elif up_protocol in {"http", "https"}:
+            try:
+                upstream_sock = open_upstream_proxy(
+                    upstream.get("ip"),
+                    int(upstream.get("port")),
+                    up_protocol,
+                    timeout=float(getattr(args, "timeout", 10)),
+                    insecure_upstream=bool(getattr(args, "insecure_upstream", False)),
+                    server_hostname=upstream.get("ip"),
+                )
+                if target.startswith("http://"):
+                    absolute_target = target
                 else:
-                    dest_host = host_hdr
-            else:
-                client_sock.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length:0\r\n\r\n")
-                client_sock.close()
+                    authority = f"[{dest_host}]" if ":" in dest_host else dest_host
+                    if dest_port != 80:
+                        authority += f":{dest_port}"
+                    absolute_target = f"http://{authority}{origin_target}"
+                clean = _clean_headers(headers, upstream_authorization=_upstream_proxy_auth(upstream))
+                upstream_sock.sendall(_serialize_request(method, absolute_target, version, clean, body))
+                store.mark_alive(upstream)
+            except Exception as exc:
+                log("[CONN#{0}] HTTP upstream request failed: {1}", cid, exc)
+                store.mark_fail(upstream)
+                _send_response(client_sock, 502, "Bad Gateway")
                 return
-
-        if up_proto in ("socks4", "socks5"):
-            try:
-                upstream_sock = connect_via_upstream(up_ip, up_port, up_proto, dest_host, dest_port, timeout=10, up_user=up_user, up_pass=up_pass)
-            except Exception as e:
-                log("[CONN#{0}] upstream (socks -> dest) failed: {1}", cid, e)
-                store.mark_fail(up)
-                client_sock.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length:0\r\n\r\n")
-                client_sock.close()
-                return
-
-            try:
-                rest = header.splitlines()[1:]
-                req_bytes = (f"{method} {path} HTTP/1.1\r\n" + "\r\n".join(rest) + "\r\n\r\n").encode()
-                body = data.split(b"\r\n\r\n", 1)[1] if b"\r\n\r\n" in data else b""
-                upstream_sock.sendall(req_bytes + body)
-            except Exception as e:
-                upstream_sock.close()
-                client_sock.close()
-                log("[CONN#{0}] send to upstream failed: {1}", cid, e)
-                return
-
-            store.mark_alive(up)
-            forward_bidirectional(client_sock, upstream_sock)
+        else:
+            _send_response(client_sock, 502, "Bad Gateway")
             return
 
-        if up_proto in ("http", "https", ""):
+        forward_bidirectional(client_sock, upstream_sock)
+        upstream_sock = None
+    except ProtocolError as exc:
+        log("[CONN#{0}] invalid HTTP request: {1}", cid, exc)
+        _send_response(client_sock, 400, "Bad Request")
+    except Exception as exc:
+        log("[CONN#{0}] HTTP handler error: {1}", cid, exc)
+    finally:
+        if upstream_sock is not None:
             try:
-                upstream_sock = socket.create_connection((up_ip, up_port), timeout=10)
-                upstream_sock.settimeout(10)
-                if up_proto == "https":
-                    if getattr(args, "insecure_upstream", False):
-                        ctx = ssl.create_default_context()
-                        ctx.check_hostname = False
-                        ctx.verify_mode = ssl.CERT_NONE
-                    else:
-                        ctx = ssl.create_default_context()
-                    upstream_sock = ctx.wrap_socket(upstream_sock, server_hostname=up_ip)
-                    upstream_sock.settimeout(10)
-            except Exception as e:
-                log("[CONN#{0}] upstream connect failed: {1}", cid, e)
-                store.mark_fail(up)
-                client_sock.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length:0\r\n\r\n")
-                client_sock.close()
-                return
-
-            proxy_auth_hdr = b""
-            if up_user and up_pass:
-                token = base64.b64encode(f"{up_user}:{up_pass}".encode()).decode()
-                proxy_auth_hdr = f"Proxy-Authorization: Basic {token}\r\n".encode()
-
-            if not (target.startswith("http://") or target.startswith("https://")):
-                scheme = "http"
-                absolute = f"{scheme}://{dest_host}"
-                if dest_port not in (80, 443):
-                    absolute += f":{dest_port}"
-                absolute += path
-                first_line = f"{method} {absolute} HTTP/1.1\r\n"
-            else:
-                first_line = f"{method} {target} HTTP/1.1\r\n"
-
-            rest_lines = header.splitlines()[1:]
-            cleaned = []
-            for ln in rest_lines:
-                if ln.lower().startswith("proxy-authorization:"):
-                    continue
-                cleaned.append(ln)
-            header_bytes = (first_line + "\r\n".join(cleaned) + "\r\n").encode()
-            header_bytes = header_bytes + proxy_auth_hdr + b"\r\n"
-
-            body = data.split(b"\r\n\r\n", 1)[1] if b"\r\n\r\n" in data else b""
-            to_send = header_bytes + body
-
-            try:
-                upstream_sock.sendall(to_send)
-            except Exception as e:
                 upstream_sock.close()
-                client_sock.close()
-                log("[CONN#{0}] send to upstream failed: {1}", cid, e)
-                return
-
-            store.mark_alive(up)
-            forward_bidirectional(client_sock, upstream_sock)
-            return
-
-        client_sock.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length:0\r\n\r\n")
-        client_sock.close()
-        return
-
-    except Exception as e:
-        log("[CONN#{0}] http handler error: {1}", cid, e)
+            except OSError:
+                pass
         try:
             client_sock.close()
-        except:
+        except OSError:
             pass

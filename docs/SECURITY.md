@@ -1,6 +1,6 @@
 # Security baseline
 
-This is the local application security baseline after Phase 1. It is not a deployment authorization or a claim that the proxy listener is production-hardened.
+This is the local application security baseline after the API, monitor lifecycle, and proxy server core hardening phases. It is not a deployment authorization or a claim of Internet-facing production hardening.
 
 ## Authentication
 
@@ -43,8 +43,10 @@ Server profile ports, protocols, rotation modes, booleans, numeric bounds, and t
 
 Creating a backup requires `settings.edit`. Downloading or restoring a database backup additionally requires `proxies.credentials`, because a backup can contain upstream proxy credentials and user records. SQLite backups use the SQLite backup API; uploaded SQLite files are staged, integrity-checked, schema-checked, and atomically replaced before schema verification.
 
-## Remaining boundaries
+## Proxy listener boundary
 
-The proxy listener still requires its dedicated correctness/security phase. Listener secret storage on disk/argv, public bind policy, protocol framing, upstream TLS/SNI behavior, sticky selection, and versioned database migrations are not declared resolved by this baseline.
+Proxy listeners default to loopback. Unauthenticated non-loopback listeners are rejected unless an operator explicitly enables `allow_public_no_auth`. Listener secrets are loaded from protected runtime profile files rather than process arguments. Process identity, protocol framing, bounded concurrency, sticky selection, and upstream TLS/SNI behavior are documented in `docs/PROXY_SERVER_CORE.md`.
+
+An explicit public no-auth override creates an open proxy and remains an operator-owned risk. UDP ASSOCIATE, SOCKS BIND, network firewall policy, reverse-proxy policy, certificate issuance, operating-system sandboxing, and versioned database migrations remain outside this local baseline.
 
 Monitor lifecycle hardening is documented separately in `docs/MONITOR_LIFECYCLE.md`. Local systemd creation/removal remains a privileged operator action and is not performed by applying an overlay.

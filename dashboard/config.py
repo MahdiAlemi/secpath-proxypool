@@ -91,6 +91,7 @@ def _save_json_config(path, payload):
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temp_path, path)
+            os.chmod(path, 0o600)
         finally:
             try:
                 os.unlink(temp_path)

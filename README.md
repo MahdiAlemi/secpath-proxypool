@@ -155,3 +155,9 @@ The complete local security baseline and remaining boundaries are documented in 
 Monitor processes now use atomic runtime claims, exact process-identity checks, cooperative cancellation, resumable paused sessions, and accurate progress persistence. Direct subprocess and systemd starts are mutually exclusive, so enabling a service no longer launches a duplicate monitor.
 
 Operational states and recovery behavior are documented in [`docs/MONITOR_LIFECYCLE.md`](docs/MONITOR_LIFECYCLE.md).
+
+## Proxy server core
+
+Proxy listeners now default to loopback, reject unauthenticated non-loopback binds unless an explicit override is set, keep listener credentials out of process arguments, and use process-safe runtime claims. HTTP CONNECT, normal HTTP forwarding, SOCKS4/SOCKS4a, SOCKS5, upstream HTTPS TLS/SNI, bounded concurrency, retry exclusion, and sticky client affinity are covered by regression tests.
+
+Operational behavior and protocol boundaries are documented in [`docs/PROXY_SERVER_CORE.md`](docs/PROXY_SERVER_CORE.md).

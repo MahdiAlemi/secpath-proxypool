@@ -1,100 +1,75 @@
+from __future__ import annotations
+
+import hmac
 import socket
 
+from proxy_server.handlers.common import connect_selected_upstream, safe_peer_key
+from proxy_server.protocol import ProtocolError, recv_cstring, recv_exact
 from proxy_server.server.proxy_store import ProxyStore
-from proxy_server.utils.network import connect_via_upstream, forward_bidirectional
 from proxy_server.utils.logging import log
+from proxy_server.utils.network import forward_bidirectional
+
+
+def _reply(sock: socket.socket, granted: bool):
+    code = 0x5A if granted else 0x5B
+    try:
+        sock.sendall(bytes([0x00, code, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]))
+    except OSError:
+        pass
 
 
 def handle_socks4_client(client_sock: socket.socket, store: ProxyStore, cid: int):
-    client_sock.settimeout(10)
+    args = store.args
+    client_sock.settimeout(float(getattr(args, "timeout", 10)))
+    client_key = safe_peer_key(client_sock)
+    upstream_sock = None
     try:
-        header = client_sock.recv(8)
-        if len(header) < 8:
-            client_sock.close()
+        header = recv_exact(client_sock, 8)
+        version, command = header[0], header[1]
+        if version != 4 or command != 1:
+            _reply(client_sock, False)
             return
-        vn = header[0]
-        cd = header[1]
-        dstport = int.from_bytes(header[2:4], "big")
-        dstip = header[4:8]
-        
-        userid = b""
-        while True:
-            b1 = client_sock.recv(1)
-            if not b1:
-                client_sock.close()
-                return
-            if b1 == b"\x00":
-                break
-            userid += b1
-        
-        userid_str = userid.decode(errors="ignore")
-        
-        args = store.args
-        if args.username is not None and args.password is not None:
-            if userid_str != args.username:
-                log("[CONN#{0}] socks4 auth failed: invalid username", cid)
-                try:
-                    client_sock.sendall(b"\x00\x5B\x00\x00\x00\x00\x00\x00")
-                except:
-                    pass
-                client_sock.close()
-                return
-        
-        dest_host = socket.inet_ntoa(dstip)
-        dest_port = dstport
-        
-        if dstip[0:3] == b"\x00\x00\x00" and dstip[3] != 0:
-            dom = b""
-            while True:
-                b1 = client_sock.recv(1)
-                if not b1:
-                    client_sock.close()
-                    return
-                if b1 == b"\x00":
-                    break
-                dom += b1
-            try:
-                dest_host = dom.decode(errors="ignore")
-            except Exception:
-                dest_host = dom.decode(errors="ignore")
+        dest_port = int.from_bytes(header[2:4], "big")
+        if not 1 <= dest_port <= 65535:
+            raise ProtocolError("invalid SOCKS4 destination port")
+        dest_ip = header[4:8]
+        user_id = recv_cstring(client_sock, 255).decode("utf-8", errors="replace")
 
-        up = store.select()
-        if up is None:
-            try:
-                client_sock.sendall(b"\x00\x5B\x00\x00\x00\x00\x00\x00")
-            except:
-                pass
-            client_sock.close()
+        expected_user = getattr(args, "username", None)
+        if expected_user and not hmac.compare_digest(user_id, str(expected_user)):
+            log("[CONN#{0}] SOCKS4 authentication failed", cid)
+            _reply(client_sock, False)
             return
 
-        up_ip, up_port, up_proto = up.get("ip"), up.get("port"), up.get("protocol")
-        log("[CONN#{0}] {1} -> upstream {2} {3}:{4} (cost={5})", cid, client_sock.getpeername()[0], up_proto, up_ip, up_port, up.get("cost"))
+        # SOCKS4a: 0.0.0.x followed by a zero-terminated domain name.
+        if dest_ip[:3] == b"\x00\x00\x00" and dest_ip[3] != 0:
+            dest_host = recv_cstring(client_sock, 253).decode("idna")
+            if not dest_host:
+                raise ProtocolError("empty SOCKS4a destination")
+        else:
+            dest_host = socket.inet_ntoa(dest_ip)
 
         try:
-            upstream_sock = connect_via_upstream(up_ip, up_port, up_proto, dest_host, dest_port, timeout=10)
-        except Exception as e:
-            log("[CONN#{0}] socks4 upstream failed: {1}", cid, e)
-            store.mark_fail(up)
-            try:
-                client_sock.sendall(b"\x00\x5B\x00\x00\x00\x00\x00\x00")
-            except:
-                pass
-            client_sock.close()
-            return
-
-        try:
-            client_sock.sendall(b"\x00\x5A" + (0).to_bytes(2, "big") + socket.inet_aton("0.0.0.0"))
+            upstream_sock, _ = connect_selected_upstream(store, client_key, dest_host, dest_port, cid)
         except Exception:
-            upstream_sock.close()
-            client_sock.close()
+            _reply(client_sock, False)
             return
 
-        store.mark_alive(up)
+        _reply(client_sock, True)
         forward_bidirectional(client_sock, upstream_sock)
-
-    except Exception as e:
-        log("[CONN#{0}] socks4 handler error: {1}", cid, e)
+        upstream_sock = None
+    except ProtocolError as exc:
+        log("[CONN#{0}] invalid SOCKS4 request: {1}", cid, exc)
+        _reply(client_sock, False)
+    except Exception as exc:
+        log("[CONN#{0}] SOCKS4 handler error: {1}", cid, exc)
+    finally:
+        if upstream_sock is not None:
+            try:
+                upstream_sock.close()
+            except OSError:
+                pass
         try:
             client_sock.close()
-        except:
+        except OSError:
             pass

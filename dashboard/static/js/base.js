@@ -456,10 +456,10 @@ function getValSafe(id, def) {
 
 function collectServerFormData() {
   return {
-    protocol: getValSafe('server-proto'), bind: getValSafe('server-bind', '0.0.0.0'), port: parseInt(getValSafe('server-port', '8080')),
+    protocol: getValSafe('server-proto'), bind: getValSafe('server-bind', '127.0.0.1'), port: parseInt(getValSafe('server-port', '8080')),
     rotate: getValSafe('server-rotate'), rotate_interval: parseInt(getValSafe('server-rotate-interval', '60')),
     min_cost: parseFloat(getValSafe('server-min-cost', '0.0')), cost_threshold: getValSafe('server-cost') ? parseFloat(getValSafe('server-cost')) : null,
-    username: getValSafe('server-user'), password: getValSafe('server-pass'), auth_required: getValSafe('server-auth-required') || null,
+    username: getValSafe('server-user'), password: getValSafe('server-pass'), auth_required: getValSafe('server-auth-required') || null, allow_public_no_auth: getValSafe('server-allow-public-no-auth', 'false') === 'true',
     certfile: getValSafe('server-certfile') || null, keyfile: getValSafe('server-keyfile') || null,
     sticky_upstream: getValSafe('server-sticky-upstream') || null, insecure_upstream: getValSafe('server-insecure-upstream') === 'true', upstream_protocol: getValSafe('server-upstream-proto') || null,
     candidate_statuses: getValSafe('server-candidate-statuses', 'alive') || 'alive',
@@ -2226,7 +2226,7 @@ async function checkServerStatus() {
         '</div>' +
         '<div class="server-card-body">' +
           '<div class="server-card-row"><span class="server-card-label">Protocol</span><span class="server-card-value">' + escapeHtml((cfg.protocol || '-').toUpperCase()) + '</span></div>' +
-          '<div class="server-card-row"><span class="server-card-label">Bind Address</span><span class="server-card-value">' + escapeHtml(cfg.bind || '0.0.0.0') + '</span></div>' +
+          '<div class="server-card-row"><span class="server-card-label">Bind Address</span><span class="server-card-value">' + escapeHtml(cfg.bind || '127.0.0.1') + '</span></div>' +
           '<div class="server-card-row"><span class="server-card-label">Port</span><span class="server-card-value">' + escapeHtml(port) + '</span></div>' +
           '<div class="server-card-row"><span class="server-card-label">Rotate Mode</span><span class="server-card-value">' + escapeHtml(cfg.rotate || 'fixed') + '</span></div>' +
           '<div class="server-card-row"><span class="server-card-label">Rotate Interval</span><span class="server-card-value">' + (cfg.rotate_interval || 60) + 's</span></div>' +
@@ -2263,7 +2263,7 @@ async function startServerFromModal() {
   
   var data = {
     protocol: getVal('server-proto'),
-    bind: getVal('server-bind', '0.0.0.0'),
+    bind: getVal('server-bind', '127.0.0.1'),
     port: port,
     rotate: getVal('server-rotate'),
     rotate_interval: parseInt(getVal('server-rotate-interval', '60')),
@@ -2271,7 +2271,7 @@ async function startServerFromModal() {
     cost_threshold: getVal('server-cost') ? parseFloat(getVal('server-cost')) : null,
     username: getVal('server-user'),
     password: getVal('server-pass'),
-    auth_required: getVal('server-auth-required') || null,
+    auth_required: getVal('server-auth-required') || null, allow_public_no_auth: getVal('server-allow-public-no-auth', 'false') === 'true',
     certfile: getVal('server-certfile') || null,
     keyfile: getVal('server-keyfile') || null,
     sticky_upstream: getVal('server-sticky-upstream') || null,
@@ -2348,7 +2348,7 @@ async function showServerSettings(port) {
   isEditingServer = true;
   
   document.getElementById('server-proto').value = cfg.protocol || 'http';
-  document.getElementById('server-bind').value = cfg.bind || '0.0.0.0';
+  document.getElementById('server-bind').value = cfg.bind || '127.0.0.1';
   document.getElementById('server-port').value = cfg.port || port;
   document.getElementById('server-rotate').value = cfg.rotate || 'better_cost';
   document.getElementById('server-rotate-interval').value = cfg.rotate_interval || 60;
@@ -2357,6 +2357,7 @@ async function showServerSettings(port) {
   document.getElementById('server-user').value = cfg.username || '';
   document.getElementById('server-pass').value = cfg.password || '';
   document.getElementById('server-auth-required').value = cfg.auth_required || '';
+  document.getElementById('server-allow-public-no-auth').value = String(!!cfg.allow_public_no_auth);
   document.getElementById('server-certfile').value = cfg.certfile || '';
   document.getElementById('server-keyfile').value = cfg.keyfile || '';
   document.getElementById('server-sticky-upstream').value = cfg.sticky_upstream || '';
@@ -2395,7 +2396,7 @@ function showAddServerForm() {
   currentEditPort = null;
   
   document.getElementById('server-proto').value = 'http';
-  document.getElementById('server-bind').value = '0.0.0.0';
+  document.getElementById('server-bind').value = '127.0.0.1';
   document.getElementById('server-port').value = '8080';
   document.getElementById('server-rotate').value = 'better_cost';
   document.getElementById('server-rotate-interval').value = '60';
@@ -2404,6 +2405,7 @@ function showAddServerForm() {
   document.getElementById('server-user').value = '';
   document.getElementById('server-pass').value = '';
   document.getElementById('server-auth-required').value = '';
+  document.getElementById('server-allow-public-no-auth').value = 'false';
   document.getElementById('server-certfile').value = '';
   document.getElementById('server-keyfile').value = '';
   document.getElementById('server-sticky-upstream').value = '';
@@ -2455,7 +2457,7 @@ async function updateServerProfile() {
   var port = currentEditPort;
   var data = {
     protocol: getVal('server-proto'),
-    bind: getVal('server-bind', '0.0.0.0'),
+    bind: getVal('server-bind', '127.0.0.1'),
     port: parseInt(getVal('server-port', '8080')),
     rotate: getVal('server-rotate'),
     rotate_interval: parseInt(getVal('server-rotate-interval', '60')),
@@ -2463,7 +2465,7 @@ async function updateServerProfile() {
     cost_threshold: getVal('server-cost') ? parseFloat(getVal('server-cost')) : null,
     username: getVal('server-user'),
     password: getVal('server-pass'),
-    auth_required: getVal('server-auth-required') || null,
+    auth_required: getVal('server-auth-required') || null, allow_public_no_auth: getVal('server-allow-public-no-auth', 'false') === 'true',
     certfile: getVal('server-certfile') || null,
     keyfile: getVal('server-keyfile') || null,
     sticky_upstream: getVal('server-sticky-upstream') || null,
@@ -2533,7 +2535,7 @@ async function startServer(port) {
     
     var data = {
     protocol: getVal('server-proto'),
-    bind: getVal('server-bind', '0.0.0.0'),
+    bind: getVal('server-bind', '127.0.0.1'),
     port: parseInt(getVal('server-port', '8080')),
     rotate: getVal('server-rotate'),
     rotate_interval: parseInt(getVal('server-rotate-interval', '60')),
@@ -2541,7 +2543,7 @@ async function startServer(port) {
     cost_threshold: getVal('server-cost') ? parseFloat(getVal('server-cost')) : null,
     username: getVal('server-user'),
       password: getVal('server-pass'),
-      auth_required: getVal('server-auth-required') || null,
+      auth_required: getVal('server-auth-required') || null, allow_public_no_auth: getVal('server-allow-public-no-auth', 'false') === 'true',
       certfile: getVal('server-certfile') || null,
       keyfile: getVal('server-keyfile') || null,
       sticky_upstream: getVal('server-sticky-upstream') || null,
@@ -2650,39 +2652,6 @@ async function deleteServer(port) {
     }
   });
 }
-
-var serverEventSource = null;
-
-function startServerLogStream() {
-  if (serverEventSource) serverEventSource.close();
-  serverEventSource = new EventSource('/api/server/log/stream');
-  var logEl = document.getElementById('server-log');
-  serverEventSource.onmessage = function(e) {
-    if (e.data) {
-      logEl.textContent += e.data + '\n';
-      logEl.scrollTop = logEl.scrollHeight;
-    }
-  };
-}
-
-function stopServerLogStream() {
-  if (serverEventSource) {
-    serverEventSource.close();
-    serverEventSource = null;
-  }
-}
-
-async function loadServerLog() {
-  var res = await authFetch('/api/server/log');
-  var data = await res.json();
-  document.getElementById('server-log').textContent = (data.lines || []).join('');
-  document.getElementById('server-log').scrollTop = document.getElementById('server-log').scrollHeight;
-}
-
-function clearServerLog() {
-  document.getElementById('server-log').textContent = '';
-}
-
 
 function pct(part, whole) {
   part = Number(part || 0);
