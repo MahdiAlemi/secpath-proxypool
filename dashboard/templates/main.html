@@ -10,7 +10,10 @@ userProxyFilters = {{ proxy_filters | tojson }};
   <div class="header">
     <div class="brand">
       <div class="logo">PX</div>
-      <div class="title">ProxyPool Control Center</div>
+      <div>
+        <div class="title">ProxyPool Control Center</div>
+        <div class="app-subtitle">Validate, qualify, and serve real-world proxies</div>
+      </div>
     </div>
     <div class="header-controls">
       <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">&#9790;</button>
@@ -21,19 +24,30 @@ userProxyFilters = {{ proxy_filters | tojson }};
   </div>
 
   <div class="nav">
-    <button class="nav-btn {{ 'active' if tab=='proxies' else '' }}" onclick="showTab('proxies')">Proxy Inventory</button>
-    <button class="nav-btn {{ 'active' if tab=='import' else '' }}" onclick="showTab('import')">Import</button>
-    <button class="nav-btn {{ 'active' if tab=='monitor' else '' }}" onclick="showTab('monitor')">Monitor</button>
-    <button class="nav-btn {{ 'active' if tab=='server' else '' }}" onclick="showTab('server')">Server</button>
-    <button class="nav-btn {{ 'active' if tab=='stats' else '' }}" onclick="showTab('stats')">Stats</button>
+    <button class="nav-btn  'active' if tab=='proxies' else '' " onclick="showTab('proxies')"><span>Inventory</span><small>Review</small></button>
+    <button class="nav-btn  'active' if tab=='import' else '' " onclick="showTab('import')"><span>Import</span><small>Sources</small></button>
+    <button class="nav-btn  'active' if tab=='monitor' else '' " onclick="showTab('monitor')"><span>Monitor</span><small>Validate</small></button>
+    <button class="nav-btn  'active' if tab=='server' else '' " onclick="showTab('server')"><span>Server</span><small>Serve</small></button>
+    <button class="nav-btn  'active' if tab=='stats' else '' " onclick="showTab('stats')"><span>Stats</span><small>Insights</small></button>
   </div>
 
   <div class="main">
+    <div class="product-hero">
+      <div>
+        <div class="eyebrow">Operational workflow</div>
+        <h2>From raw proxy lists to production-ready routes</h2>
+        <p>Import sources, validate real protocol capabilities, review quality signals, then serve only the proxies that match your use case.</p>
+      </div>
+      <div class="hero-actions">
+        <button class="btn btn-primary" onclick="showTab('import')">Start Import</button>
+        <button class="btn" onclick="openModal('modal-settings')">Run Preflight</button>
+      </div>
+    </div>
     <div class="product-guide">
-      <div class="product-guide-card"><strong>1. Import</strong><span>Add fresh proxy URLs or paste proxy lists.</span></div>
-      <div class="product-guide-card"><strong>2. Monitor</strong><span>Run health checks; successful untested proxies become alive.</span></div>
-      <div class="product-guide-card"><strong>3. Serve</strong><span>Start an HTTP proxy server using alive candidates.</span></div>
-      <div class="product-guide-card"><strong>4. Verify</strong><span>Test with curl -x http://127.0.0.1:PORT https://ident.me.</span></div>
+      <div class="product-guide-card"><span class="step-badge">01</span><strong>Import sources</strong><span>Add fresh proxy URLs or paste proxy lists.</span></div>
+      <div class="product-guide-card"><span class="step-badge">02</span><strong>Validate quality</strong><span>Run HTTPS/IP, remote DNS, and Telegram checks.</span></div>
+      <div class="product-guide-card"><span class="step-badge">03</span><strong>Review readiness</strong><span>Use Web, Telegram, and DNS capability filters.</span></div>
+      <div class="product-guide-card"><span class="step-badge">04</span><strong>Serve safely</strong><span>Create server profiles from use-case presets.</span></div>
     </div>
     <!-- PROXIES TAB -->
     <div id="tab-proxies" class="tab-content {{ 'hidden' if tab!='proxies' else '' }}">
@@ -279,10 +293,18 @@ userProxyFilters = {{ proxy_filters | tojson }};
 
     <!-- SERVER TAB -->
     <div id="tab-server" class="tab-content {{ 'hidden' if tab!='server' else '' }}">
-      <div class="card">
+      <div class="card server-builder-card">
         <div class="card-header">
-          <div class="card-title">Proxy Servers <span class="health-pill">Production candidate default: alive</span></div>
+          <div>
+            <div class="card-title">Proxy Server Builder <span class="health-pill">Use-case driven</span></div>
+            <div class="section-hint">Choose a preset first, then serve only proxies with the capabilities your client actually needs.</div>
+          </div>
           <button class="btn btn-primary btn-sm" onclick="showAddServerForm()">+ Add New Server Profile</button>
+        </div>
+        <div class="server-preset-strip">
+          <div><strong>Web Browsing</strong><span>Requires HTTPS-ready exits.</span></div>
+          <div><strong>Telegram</strong><span>Requires HTTPS + remote DNS + Telegram reachability.</span></div>
+          <div><strong>Scraping / HTTP</strong><span>Allows simpler HTTP-only routes.</span></div>
         </div>
         <div id="servers-list" class="servers-grid">
           <div class="servers-empty">No server profiles. Click "+ Add New Server Profile" to create one.</div>
