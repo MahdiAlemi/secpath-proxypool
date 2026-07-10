@@ -2165,6 +2165,36 @@ async function stopMonitor(monitorId) {
   }, {confirmText: 'Kill', confirmClass: 'btn-danger'});
 }
 
+
+function updateServerOverview(servers) {
+  servers = servers || {};
+  var ports = Object.keys(servers);
+  var running = 0;
+  var httpsRequired = 0;
+  var telegramRequired = 0;
+  ports.forEach(function(port) {
+    var server = servers[port] || {};
+    var cfg = server.config || {};
+    if (server.running) running += 1;
+    if (cfg.require_web_https !== false) httpsRequired += 1;
+    if (cfg.require_telegram) telegramRequired += 1;
+  });
+  setTextSafe('server-kpi-total', ports.length);
+  setTextSafe('server-kpi-running', running);
+  setTextSafe('server-kpi-https', httpsRequired);
+  setTextSafe('server-kpi-telegram', telegramRequired);
+  var summary = document.getElementById('server-runtime-summary');
+  if (summary) {
+    if (ports.length === 0) {
+      summary.textContent = 'Create a server profile after validating candidate proxies.';
+    } else if (running > 0) {
+      summary.textContent = running + ' server profile' + (running > 1 ? 's are' : ' is') + ' currently serving traffic.';
+    } else {
+      summary.textContent = 'All server profiles are stopped. Run preflight before starting traffic.';
+    }
+  }
+}
+
 async function checkServerStatus() {
   try {
     var res = await authFetch('/api/server');
@@ -2176,7 +2206,7 @@ async function checkServerStatus() {
     var ports = Object.keys(servers);
     
     if (ports.length === 0) {
-      grid.innerHTML = '<div class="servers-empty">No server profiles. Click "+ Add New Server Profile" to create one.</div>';
+      grid.innerHTML = '<div class="servers-empty serving-empty-state"><strong>No server profiles yet.</strong><span>Create a profile from a preset, run preflight, then start serving when candidates are available.</span><button class="btn btn-primary btn-sm" onclick="showAddServerForm()">Create server profile</button></div>';
       return;
     }
     
@@ -2186,7 +2216,7 @@ async function checkServerStatus() {
       var cfg = s.config || {};
       
       var card = document.createElement('div');
-      card.className = 'server-card';
+      card.className = 'server-card serving-profile-card';
       
       var statusClass = s.running ? 'running' : 'stopped';
       var statusText = s.running ? 'Running' : 'Stopped';

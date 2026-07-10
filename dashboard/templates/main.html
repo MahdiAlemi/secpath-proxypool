@@ -383,21 +383,31 @@ userProxyFilters = {{ proxy_filters | tojson }};
 
     <!-- SERVER TAB -->
     <div id="tab-server" class="tab-content {{ 'hidden' if tab!='server' else '' }}">
-      <div class="card server-builder-card">
-        <div class="card-header">
+      <div class="card server-builder-card serving-center-card">
+        <div class="card-header serving-center-header">
           <div>
-            <div class="card-title">Proxy Server Builder <span class="health-pill">Use-case driven</span></div>
-            <div class="section-hint">Choose a preset first, then serve only proxies with the capabilities your client actually needs.</div>
+            <div class="card-title">Serving Center <span class="health-pill">Use-case driven</span></div>
+            <div class="section-hint">Create, preflight, and run local proxy server profiles that only use proxies with the capabilities your client actually needs.</div>
           </div>
           <button class="btn btn-primary btn-sm" onclick="showAddServerForm()">+ Add New Server Profile</button>
         </div>
-        <div class="server-preset-strip">
+        <div class="server-serving-overview">
+          <div class="server-kpi"><span>Profiles</span><strong id="server-kpi-total">0</strong><small>configured listeners</small></div>
+          <div class="server-kpi"><span>Running</span><strong id="server-kpi-running">0</strong><small>active local servers</small></div>
+          <div class="server-kpi"><span>HTTPS-required</span><strong id="server-kpi-https">0</strong><small>web-safe profiles</small></div>
+          <div class="server-kpi"><span>Telegram-ready</span><strong id="server-kpi-telegram">0</strong><small>strict TG profiles</small></div>
+        </div>
+        <div class="serving-guidance">
+          <div><strong>Serving checklist</strong><span>Pick a use-case preset, run preflight, create the profile, then start only when matching candidates exist.</span></div>
+          <div id="server-runtime-summary">Waiting for server snapshot...</div>
+        </div>
+        <div class="server-preset-strip serving-preset-strip">
           <div><strong>Web Browsing</strong><span>Requires HTTPS-ready exits.</span></div>
           <div><strong>Telegram</strong><span>Requires HTTPS + remote DNS + Telegram reachability.</span></div>
           <div><strong>Scraping / HTTP</strong><span>Allows simpler HTTP-only routes.</span></div>
         </div>
         <div id="servers-list" class="servers-grid">
-          <div class="servers-empty">No server profiles. Click "+ Add New Server Profile" to create one.</div>
+          <div class="servers-empty serving-empty-state"><strong>No server profiles yet.</strong><span>Create a profile from a preset, run preflight, then start serving when candidates are available.</span><button class="btn btn-primary btn-sm" onclick="showAddServerForm()">Create server profile</button></div>
         </div>
       </div>
     </div>
