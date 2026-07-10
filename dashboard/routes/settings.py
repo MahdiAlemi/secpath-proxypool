@@ -32,6 +32,88 @@ def api_settings():
     })
 
 
+@settings_bp.route("/api/settings/diagnostics", methods=["GET"])
+@login_required
+@require_permission("settings.view")
+def api_settings_diagnostics():
+    """Return an operator-friendly health snapshot for local preflight checks."""
+    from sqlalchemy import func, or_
+    from config import config
+    from database import db, Proxy
+
+    db_type = config.DB_TYPE.lower()
+    sqlite_path = config.SQLITE_DB_PATH
+    sqlite_abs = sqlite_path if os.path.isabs(sqlite_path) else os.path.join(BASE_DIR, sqlite_path)
+
+    runtime_files = []
+    for name in [".monitors.json", ".servers.json", ".server_config.json", "dashboard/.monitors.json", "dashboard/.servers.json"]:
+        path = os.path.join(BASE_DIR, name)
+        runtime_files.append({"name": name, "exists": os.path.exists(path)})
+
+    progress_dir = os.path.join(BASE_DIR, "progress")
+    progress_count = len(glob.glob(os.path.join(progress_dir, "*.json"))) if os.path.isdir(progress_dir) else 0
+
+    recommendations = []
+    with db.session() as session:
+        total = session.query(func.count(Proxy.id)).scalar() or 0
+        alive = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive').scalar() or 0
+        soft = session.query(func.count(Proxy.id)).filter(Proxy.status == 'soft').scalar() or 0
+        dead = session.query(func.count(Proxy.id)).filter(Proxy.status == 'dead').scalar() or 0
+        revived = session.query(func.count(Proxy.id)).filter(Proxy.status == 'revived').scalar() or 0
+        untested = session.query(func.count(Proxy.id)).filter(or_(Proxy.status == 'untested', Proxy.status.is_(None))).scalar() or 0
+        web_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.web_https_ok.is_(True)).scalar() or 0
+        dns_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.remote_dns_ok.is_(True)).scalar() or 0
+        telegram_ready = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.web_https_ok.is_(True), Proxy.telegram_ok.is_(True)).scalar() or 0
+        full_capability = session.query(func.count(Proxy.id)).filter(Proxy.status == 'alive', Proxy.web_https_ok.is_(True), Proxy.remote_dns_ok.is_(True), Proxy.telegram_ok.is_(True)).scalar() or 0
+        legacy_revived = session.query(func.count(Proxy.id)).filter(
+            Proxy.status == 'revived',
+            Proxy.web_https_ok.is_(False),
+            Proxy.remote_dns_ok.is_(False),
+            Proxy.telegram_ok.is_(False),
+        ).scalar() or 0
+
+    if db_type == 'sqlite' and not os.path.exists(sqlite_abs):
+        recommendations.append('SQLite database file is missing; run dev_setup or init_db before using the dashboard.')
+    if legacy_revived > 0:
+        recommendations.append('Legacy revived rows still need cleanup: use Settings → Normalize Legacy Statuses, then run a monitor.')
+    if alive > 0 and web_ready < alive:
+        recommendations.append('Some alive proxies are not web-ready; use Web-ready filters/server preset for real browsing traffic.')
+    if total > 0 and alive == 0:
+        recommendations.append('No alive proxies currently available; run a monitor after importing fresh sources.')
+    if progress_count > 20:
+        recommendations.append('Many progress files are present; use Clear Runtime Files when no monitors are running.')
+    if not recommendations:
+        recommendations.append('Preflight looks good. Continue using capability filters and run monitor refreshes regularly.')
+
+    return jsonify({
+        "success": True,
+        "db": {
+            "type": db_type,
+            "sqlite_path": sqlite_abs,
+            "sqlite_exists": os.path.exists(sqlite_abs),
+            "sqlite_size_mb": (os.path.getsize(sqlite_abs) / 1024 / 1024) if os.path.exists(sqlite_abs) else 0,
+        },
+        "counts": {
+            "total": total,
+            "alive": alive,
+            "soft": soft,
+            "dead": dead,
+            "revived": revived,
+            "untested": untested,
+            "web_ready": web_ready,
+            "dns_ready": dns_ready,
+            "telegram_ready": telegram_ready,
+            "full_capability": full_capability,
+            "legacy_revived": legacy_revived,
+        },
+        "runtime": {
+            "files": runtime_files,
+            "progress_files": progress_count,
+        },
+        "recommendations": recommendations,
+    })
+
+
 @settings_bp.route("/api/settings/password", methods=["POST"])
 @login_required
 @require_permission("settings.edit")

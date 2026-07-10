@@ -566,7 +566,7 @@ function showImportTab(tab) {
 
 function openModal(id) {
   document.getElementById(id).classList.add('active');
-  if (id === 'modal-settings') loadSettings();
+  if (id === 'modal-settings') { loadSettings(); loadDiagnostics(); }
   if (id === 'modal-users') loadUsers();
 }
 
@@ -2637,6 +2637,55 @@ async function loadSettings() {
     document.getElementById('db-info').textContent = 'MySQL: ' + data.db_name;
   } else {
     document.getElementById('db-info').textContent = (data.db_path || data.sqlite_db_path || 'SQLite') + ' - ' + Number(data.db_size || 0).toFixed(2) + ' MB';
+  }
+}
+
+function escapeHtml(text) {
+  return String(text == null ? '' : text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function diagnosticCard(label, value, color) {
+  return '<div style="background:var(--panel-light);border:1px solid var(--border);border-radius:8px;padding:10px">' +
+    '<div style="font-size:11px;color:var(--muted);margin-bottom:4px">' + escapeHtml(label) + '</div>' +
+    '<div style="font-size:18px;font-weight:700;color:' + (color || 'var(--text)') + '">' + escapeHtml(value) + '</div>' +
+    '</div>';
+}
+
+async function loadDiagnostics() {
+  var statusEl = document.getElementById('diagnostics-status');
+  var panel = document.getElementById('diagnostics-panel');
+  var recs = document.getElementById('diagnostics-recommendations');
+  if (!panel || !recs) return;
+  if (statusEl) statusEl.textContent = 'Loading...';
+  try {
+    var res = await authFetch('/api/settings/diagnostics');
+    var data = await res.json();
+    if (!data.success) throw new Error(data.error || 'diagnostics failed');
+    var c = data.counts || {};
+    var db = data.db || {};
+    panel.innerHTML = '' +
+      diagnosticCard('DB', (db.type || '-').toUpperCase(), db.type === 'sqlite' ? 'var(--success)' : 'var(--accent)') +
+      diagnosticCard('SQLite size', Number(db.sqlite_size_mb || 0).toFixed(2) + ' MB') +
+      diagnosticCard('Total proxies', c.total || 0) +
+      diagnosticCard('Alive', c.alive || 0, 'var(--success)') +
+      diagnosticCard('Web-ready', c.web_ready || 0, 'var(--success)') +
+      diagnosticCard('Telegram-ready', c.telegram_ready || 0, '#0088cc') +
+      diagnosticCard('Full-capability', c.full_capability || 0, 'var(--accent)') +
+      diagnosticCard('Legacy revived', c.legacy_revived || 0, (c.legacy_revived || 0) > 0 ? 'var(--danger)' : 'var(--success)') +
+      diagnosticCard('Progress files', (data.runtime && data.runtime.progress_files) || 0);
+    recs.innerHTML = (data.recommendations || []).map(function(r) {
+      return '<div style="background:var(--panel-light);border-left:3px solid var(--accent);padding:8px;border-radius:6px">' + escapeHtml(r) + '</div>';
+    }).join('');
+    if (statusEl) statusEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    panel.innerHTML = '';
+    recs.innerHTML = '<div style="color:var(--danger)">Diagnostics failed: ' + escapeHtml(e.message || e) + '</div>';
+    if (statusEl) statusEl.textContent = 'Failed';
   }
 }
 
