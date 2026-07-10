@@ -271,12 +271,27 @@ userProxyFilters = {{ proxy_filters | tojson }};
 
     <!-- IMPORT TAB -->
     <div id="tab-import" class="tab-content {{ 'hidden' if tab!='import' else '' }}">
-      <div class="card">
-        <div class="card-header"><div class="card-title">Import Proxies</div></div>
-        <div class="tabs">
-          <button class="tab-btn active" onclick="showImportTab('url')">From URL</button>
-          <button class="tab-btn" onclick="showImportTab('links')">From Links Config</button>
-          <button class="tab-btn" onclick="showImportTab('manual')">Manual Entry</button>
+      <div class="card import-center-card">
+        <div class="card-header import-center-header">
+          <div>
+            <div class="card-title">Source Center <span class="health-pill">Fresh inputs</span></div>
+            <div class="section-hint">Bring in raw proxies from URLs, grouped source configs, or manual lists before validation.</div>
+          </div>
+          <button class="btn btn-sm" onclick="showTab('monitor', event)">Validate after import</button>
+        </div>
+        <div class="import-source-overview">
+          <div class="import-source-card active" data-import-mode="url" onclick="showImportTab('url', event)"><strong>Single URL</strong><span>Fetch one proxy list with a selected protocol label.</span></div>
+          <div class="import-source-card" data-import-mode="links" onclick="showImportTab('links', event)"><strong>Source config</strong><span>Import multiple grouped URLs from INI-style config.</span></div>
+          <div class="import-source-card" data-import-mode="manual" onclick="showImportTab('manual', event)"><strong>Manual batch</strong><span>Paste or upload raw proxies for quick ingest.</span></div>
+        </div>
+        <div class="import-guidance">
+          <div><strong>Import checklist</strong><span>Count first when possible, import, then run Validation Center to qualify HTTPS/DNS/Telegram readiness.</span></div>
+          <div id="import-mode-summary">Mode: Single URL · Best for one fresh public list.</div>
+        </div>
+        <div class="tabs import-mode-tabs">
+          <button class="tab-btn active" onclick="showImportTab('url', event)">From URL</button>
+          <button class="tab-btn" onclick="showImportTab('links', event)">From Links Config</button>
+          <button class="tab-btn" onclick="showImportTab('manual', event)">Manual Entry</button>
         </div>
 
         <div id="import-url" class="import-panel">
@@ -335,6 +350,8 @@ userProxyFilters = {{ proxy_filters | tojson }};
         </div>
 
         <div id="import-result" class="form-group" style="margin-top:16px"></div>
+      </div>
+    </div>
       </div>
     </div>
 

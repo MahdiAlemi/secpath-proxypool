@@ -694,12 +694,30 @@ function showTab(tab, evt) {
 }
 
 
-function showImportTab(tab) {
-  document.querySelectorAll('.import-panel').forEach(function(el) { el.classList.add('hidden'); });
-  document.getElementById('import-' + tab).classList.remove('hidden');
-  document.querySelectorAll('.tab-btn').forEach(function(el) { el.classList.remove('active'); });
-  event.target.classList.add('active');
+function updateImportModeSummary(tab) {
+  var summary = document.getElementById('import-mode-summary');
+  if (!summary) return;
+  var copy = {
+    url: 'Mode: Single URL · Best for one fresh public list.',
+    links: 'Mode: Source config · Best for recurring grouped sources by protocol.',
+    manual: 'Mode: Manual batch · Best for quick paste/upload and private lists.'
+  };
+  summary.textContent = copy[tab] || copy.url;
 }
+
+function showImportTab(tab, evt) {
+  document.querySelectorAll('.import-panel').forEach(function(el) { el.classList.add('hidden'); });
+  var panel = document.getElementById('import-' + tab);
+  if (panel) panel.classList.remove('hidden');
+  document.querySelectorAll('.tab-btn').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('.import-source-card').forEach(function(el) { el.classList.toggle('active', el.getAttribute('data-import-mode') === tab); });
+  var source = (evt && evt.target) || (typeof event !== 'undefined' && event && event.target) || null;
+  var btn = source && source.closest ? source.closest('.tab-btn') : null;
+  if (!btn) btn = document.querySelector('.tab-btn[onclick*="showImportTab(\'' + tab + '\'"]');
+  if (btn) btn.classList.add('active');
+  updateImportModeSummary(tab);
+}
+
 
 function openModal(id) {
   document.getElementById(id).classList.add('active');
@@ -1362,7 +1380,7 @@ async function doImportUrl() {
   
   if (count > 0) {
     showConfirm('Import Proxies', 'Import ' + count + ' proxies from URL?', async function() {
-      document.getElementById('import-result').innerHTML = 'Importing...';
+      document.getElementById('import-result').innerHTML = '<div class="import-result-card">Importing...</div>';
       var res = await authFetch('/api/import', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1376,7 +1394,7 @@ async function doImportUrl() {
     return;
   }
 
-  document.getElementById('import-result').innerHTML = 'Importing...';
+  document.getElementById('import-result').innerHTML = '<div class="import-result-card">Importing...</div>';
   var res = await authFetch('/api/import', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -1398,7 +1416,7 @@ async function doImportLinks() {
   
   if (count > 0) {
     showConfirm('Import Proxies', 'Import ' + count + ' proxies?', async function() {
-      document.getElementById('import-result').innerHTML = 'Importing...';
+      document.getElementById('import-result').innerHTML = '<div class="import-result-card">Importing...</div>';
       var res = await authFetch('/api/import', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1414,7 +1432,7 @@ async function doImportLinks() {
     return;
   }
 
-  document.getElementById('import-result').innerHTML = 'Importing...';
+  document.getElementById('import-result').innerHTML = '<div class="import-result-card">Importing...</div>';
   var res = await authFetch('/api/import', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -3077,6 +3095,7 @@ async function updateProxyFilterInfo() {
 
 initTheme();
 loadCurrentUserPermissions();
+updateImportModeSummary('url');
 loadUserProxyFilters();
 
 if (typeof userProxyFilters !== 'undefined' && (userProxyFilters.statuses.length > 0 || userProxyFilters.protocols.length > 0)) {
