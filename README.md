@@ -13,6 +13,7 @@
     <img alt="Flask" src="https://img.shields.io/badge/Flask-2.3%2B-000000?logo=flask&logoColor=white">
     <img alt="SQLAlchemy" src="https://img.shields.io/badge/SQLAlchemy-2.0%2B-D71F00">
     <img alt="Local-first" src="https://img.shields.io/badge/runtime-local--first-36B5A8">
+    <img alt="MIT License" src="https://img.shields.io/badge/license-MIT-2EA44F">
   </p>
 </div>
 
@@ -254,7 +255,9 @@ Keep secrets, proxy credentials, databases, generated lists, and runtime logs ou
 
 ## License
 
-No open-source license has been selected yet. Add a `LICENSE` file before granting public reuse, modification, or redistribution rights.
+SecPath ProxyPool is released under the [MIT License](LICENSE).
+
+Copyright © 2026 Mahdi Alemi.
 
 ---
 
