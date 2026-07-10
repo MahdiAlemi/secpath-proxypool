@@ -22,6 +22,7 @@ jobs:
     name: Validate and build
     runs-on: ubuntu-latest
     timeout-minutes: 45
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -36,7 +37,9 @@ jobs:
           cache-dependency-path: public_monitor/requirements.txt
 
       - name: Install monitor dependencies
-        run: python -m pip install --disable-pip-version-check -r public_monitor/requirements.txt
+        run: |
+          python -m pip install --disable-pip-version-check \
+            -r public_monitor/requirements.txt
 
       - name: Validate public proxies and build site
         run: |
@@ -58,9 +61,11 @@ jobs:
     name: Deploy GitHub Pages
     needs: build
     runs-on: ubuntu-latest
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Deploy site
         id: deployment
