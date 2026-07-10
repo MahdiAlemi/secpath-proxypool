@@ -110,7 +110,7 @@ def create_app():
     @app.route("/index")
     @login_required
     def index():
-        tab = request.args.get("tab", "proxies")
+        tab = request.args.get("tab", "cockpit")
         user = session.get("user")
         
         # Get user's proxy filters for server-side rendering
