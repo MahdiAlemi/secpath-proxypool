@@ -404,6 +404,24 @@ userProxyFilters = {{ proxy_filters | tojson }};
 
     <!-- STATS TAB -->
     <div id="tab-stats" class="tab-content {{ 'hidden' if tab!='stats' else '' }}">
+      <div class="card stats-insights-header">
+        <div>
+          <div class="eyebrow">Insights center</div>
+          <h2>Proxy quality and readiness analytics</h2>
+          <p>Track inventory health, capability readiness, protocol mix, and geo/provider concentration before routing real clients.</p>
+        </div>
+        <div class="stats-insights-actions">
+          <button class="btn btn-primary" onclick="showTab('monitor', event)">Refresh validation</button>
+          <button class="btn" onclick="showTab('server', event)">Build server</button>
+        </div>
+      </div>
+      <div id="stats-readiness-insights" class="stats-readiness-insights">
+        <div class="stats-insight-card"><span>Web readiness</span><strong id="stats-insight-web">0%</strong><small>alive proxies with HTTPS OK</small></div>
+        <div class="stats-insight-card"><span>Telegram readiness</span><strong id="stats-insight-telegram">0%</strong><small>alive proxies reaching Telegram</small></div>
+        <div class="stats-insight-card"><span>Full capability</span><strong id="stats-insight-full">0%</strong><small>HTTPS + DNS + Telegram</small></div>
+        <div class="stats-insight-card"><span>Quality note</span><strong id="stats-insight-note">Waiting</strong><small id="stats-insight-note-detail">Load stats to calculate readiness.</small></div>
+      </div>
+      <div id="stats-insight-summary" class="stats-insight-summary">Waiting for stats snapshot...</div>
       <div class="stats-grid">
         <div class="stat-card"><div class="stat-value" id="stat-total">0</div><div class="stat-label">Total Proxies</div></div>
         <div class="stat-card"><div class="stat-value" id="stat-alive" style="color:var(--success)">0</div><div class="stat-label">Alive</div></div>

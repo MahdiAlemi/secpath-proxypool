@@ -2659,6 +2659,54 @@ function clearServerLog() {
   document.getElementById('server-log').innerHTML = '';
 }
 
+
+function pct(part, whole) {
+  part = Number(part || 0);
+  whole = Number(whole || 0);
+  return whole > 0 ? Math.round((part / whole) * 100) : 0;
+}
+
+function updateStatsInsights(data, statsData) {
+  data = data || {};
+  statsData = statsData || data;
+  var alive = Number(statsData.alive || data.alive || 0);
+  var web = Number(data.web_ready || 0);
+  var telegram = Number(data.telegram_ready || 0);
+  var full = Number(data.full_capability || 0);
+  var total = Number(data.total || 0);
+  var dead = Number(statsData.dead || data.dead || 0);
+  var untested = Number(statsData.untested || data.untested || 0);
+  var webPct = pct(web, alive);
+  var telegramPct = pct(telegram, alive);
+  var fullPct = pct(full, alive);
+  setTextSafe('stats-insight-web', webPct + '%');
+  setTextSafe('stats-insight-telegram', telegramPct + '%');
+  setTextSafe('stats-insight-full', fullPct + '%');
+
+  var note = 'Needs data';
+  var detail = 'Import and validate proxies to build quality signals.';
+  if (total > 0 && alive === 0) {
+    note = 'Validate now';
+    detail = 'Inventory exists, but no alive proxies are ready for serving.';
+  } else if (alive > 0 && webPct >= 80 && fullPct >= 50) {
+    note = 'Strong pool';
+    detail = 'The pool is ready for web browsing and advanced use cases.';
+  } else if (alive > 0 && webPct >= 40) {
+    note = 'Usable pool';
+    detail = 'Web-ready capacity exists; keep monitoring for stronger quality.';
+  } else if (alive > 0) {
+    note = 'Partial pool';
+    detail = 'Alive proxies exist, but capability validation is still thin.';
+  }
+  setTextSafe('stats-insight-note', note);
+  setTextSafe('stats-insight-note-detail', detail);
+
+  var summary = document.getElementById('stats-insight-summary');
+  if (summary) {
+    summary.textContent = 'Total ' + total + ' · Alive ' + alive + ' · Dead ' + dead + ' · Untested ' + untested + ' · Web-ready ' + web + ' · Telegram-ready ' + telegram + ' · Full-capability ' + full;
+  }
+}
+
 async function loadStats() {
   try {
     var res = await authFetch('/api/stats');
@@ -2700,6 +2748,7 @@ async function loadStats() {
     setTxt('stat-telegram-ready', data.telegram_ready);
     setTxt('stat-full-capability', data.full_capability);
     updateInventoryOverview(data, statsData);
+    updateStatsInsights(data, statsData);
     
     var lastScanInfo = document.getElementById('last-scan-info');
     var lastScanTime = null;
