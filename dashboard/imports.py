@@ -62,7 +62,7 @@ def fetch_public_text(url: str) -> SourceText:
             timeout=(5, 20),
             allow_redirects=False,
             stream=True,
-            headers={"User-Agent": "ProxyPool-SourceFetcher/2.0"},
+            headers={"User-Agent": "SecPath-ProxyPool-SourceFetcher/2.0"},
         )
         validate_public_peer(_response_peer_ip(response), resolved_ips)
         if 300 <= response.status_code < 400:

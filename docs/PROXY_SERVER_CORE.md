@@ -40,7 +40,7 @@ Runtime ownership is verified using all of the following:
 - process creation time;
 - the exact `--server-id` process argument.
 
-This prevents a recycled PID from being treated as a ProxyPool server. A duplicate Start returns a conflict instead of stopping or replacing the existing process. Stop sends `SIGTERM`, waits for graceful listener shutdown, and uses a bounded kill fallback only when required.
+This prevents a recycled PID from being treated as a SecPath ProxyPool server. A duplicate Start returns a conflict instead of stopping or replacing the existing process. Stop sends `SIGTERM`, waits for graceful listener shutdown, and uses a bounded kill fallback only when required.
 
 ## Listener concurrency
 

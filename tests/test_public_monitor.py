@@ -97,7 +97,7 @@ class PublicMonitorTest(unittest.TestCase):
                 output,
                 summaries=summaries,
                 downloads=workbooks,
-                repository_url="https://github.com/example/proxypool",
+                repository_url="https://github.com/example/secpath-proxypool",
                 generated_at=datetime(2026, 7, 10, 12, 0, tzinfo=timezone.utc),
                 run_status="success",
             )
@@ -105,6 +105,8 @@ class PublicMonitorTest(unittest.TestCase):
             metadata_text = (output / "metadata.json").read_text(encoding="utf-8")
             metadata = json.loads(metadata_text)
 
+        self.assertIn("SecPath Proxy Lists", html_text)
+        self.assertIn("SecPath ProxyPool", html_text)
         self.assertIn("Download Excel", html_text)
         self.assertIn("top-20-socks5.xlsx", html_text)
         self.assertNotIn("198.51.100.", html_text)
@@ -137,7 +139,7 @@ class PublicMonitorTest(unittest.TestCase):
                 group="socks5",
                 proxies=[result],
                 summary=summary,
-                repository_url="https://github.com/example/proxypool",
+                repository_url="https://github.com/example/secpath-proxypool",
             )
             with zipfile.ZipFile(path) as archive:
                 names = set(archive.namelist())

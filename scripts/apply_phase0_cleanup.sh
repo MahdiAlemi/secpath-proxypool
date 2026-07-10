@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 if [[ ! -f database.py || ! -d dashboard || ! -d proxy_monitor ]]; then
-  echo "[FAIL] Run this script from the ProxyPool repository overlay." >&2
+  echo "[FAIL] Run this script from the SecPath ProxyPool repository overlay." >&2
   exit 1
 fi
 

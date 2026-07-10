@@ -1,4 +1,4 @@
-name: Validate and publish public proxy exports
+name: Build and publish SecPath Proxy Lists
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: public-proxy-pages
+  group: secpath-proxy-lists-pages
   cancel-in-progress: false
 
 env:

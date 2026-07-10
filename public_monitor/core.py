@@ -139,7 +139,7 @@ def _fetch_source(protocol: str, url: str, timeout: int) -> list[Candidate]:
             url,
             timeout=timeout,
             allow_redirects=True,
-            headers={"User-Agent": "ProxyPool-Public-Monitor/1.0"},
+            headers={"User-Agent": "SecPath-ProxyPool-Public-Monitor/1.0"},
         )
         response.raise_for_status()
     finally:

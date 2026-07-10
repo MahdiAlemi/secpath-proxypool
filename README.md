@@ -1,7 +1,7 @@
 <div align="center">
-  <img src="dashboard/static/img/favicon.svg" width="96" height="96" alt="ProxyPool logo">
+  <img src="dashboard/static/img/favicon.svg" width="96" height="96" alt="SecPath ProxyPool logo">
 
-  # ProxyPool
+  # SecPath ProxyPool
 
   **A local-first control plane for importing, validating, analyzing, and serving proxy pools.**
 
@@ -13,7 +13,7 @@
   </p>
 </div>
 
-ProxyPool combines proxy ingestion, capability validation, operational monitoring, pool analytics, and local HTTP/SOCKS serving in one security-conscious Flask application. It is designed for operators who need to understand **which proxies are usable, for what purpose, and with what level of confidence**.
+SecPath ProxyPool combines proxy ingestion, capability validation, operational monitoring, pool analytics, and local HTTP/SOCKS serving in one security-conscious Flask application. It is designed for operators who need to understand **which proxies are usable, for what purpose, and with what level of confidence**.
 
 ## Highlights
 
@@ -126,16 +126,6 @@ The development dashboard binds to loopback by default. A non-loopback bind requ
 6. Create a listener in **Serving** using only the required protocols and capabilities.
 7. Use **Operations** for diagnostics, backups, restore, and guarded maintenance.
 
-## Public proxy export site
-
-The repository also includes a separate, static GitHub Pages showcase for `proxy.secpath.space`. A scheduled GitHub Actions workflow validates public candidates and publishes three Excel downloads:
-
-- Top 20 SOCKS5 proxies
-- Top 20 SOCKS4 proxies
-- Top 20 HTTP/HTTPS proxies
-
-The public page has no application API and does not expose endpoint lists in HTML or JSON. Proxy endpoints appear only inside the generated XLSX files. See [`docs/PUBLIC_PROXY_EXPORT.md`](docs/PUBLIC_PROXY_EXPORT.md) for workflow, DNS, ranking, and responsible-use details.
-
 ## Verification
 
 Run the complete disposable-database health suite:
@@ -165,14 +155,24 @@ bash scripts/release_check.sh --require-clean
 
 All automated checks use disposable SQLite databases and must not modify the working `proxies.db`.
 
+## Public utility: SecPath Proxy Lists
+
+[`proxy.secpath.space`](https://proxy.secpath.space) is the public companion utility for the project. A scheduled GitHub Actions workflow collects public proxy candidates, validates them from a GitHub-hosted runner, ranks the strongest current results, and publishes three Excel exports:
+
+- Top 20 SOCKS5 proxies
+- Top 20 SOCKS4 proxies
+- Top 20 HTTP/HTTPS proxies
+
+The site is static. It does not expose the dashboard, a database, a runtime API, or proxy endpoints in page HTML or metadata. See [`docs/PUBLIC_PROXY_EXPORT.md`](docs/PUBLIC_PROXY_EXPORT.md).
+
 ## Backups and migration
 
 Create a private, integrity-checked SQLite backup:
 
 ```bash
 python3 scripts/sqlite_backup.py backup \
-  --database proxies.db \
-  --output-dir backups
+  --source proxies.db \
+  --directory backups
 ```
 
 Verify a backup:
@@ -193,7 +193,7 @@ Add `--execute` only after reviewing the plan. Destructive replacement requires 
 
 ## Security model
 
-ProxyPool treats proxy credentials and runtime controls as sensitive data.
+SecPath ProxyPool treats proxy credentials and runtime controls as sensitive data.
 
 - Browser mutations require CSRF tokens.
 - General inventory and status APIs redact upstream usernames and passwords.
@@ -222,7 +222,7 @@ See [`docs/SECURITY.md`](docs/SECURITY.md) for the complete security boundary.
 | [`docs/INSIGHTS_OPERATIONS_UI.md`](docs/INSIGHTS_OPERATIONS_UI.md) | Insights, Operations, and Access |
 | [`docs/LOCAL_RUNTIME.md`](docs/LOCAL_RUNTIME.md) | Local binding and secret rotation |
 | [`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md) | Backup, migration, and release checks |
-| [`docs/PUBLIC_PROXY_EXPORT.md`](docs/PUBLIC_PROXY_EXPORT.md) | Public GitHub Actions validation and Excel export site |
+| [`docs/PUBLIC_PROXY_EXPORT.md`](docs/PUBLIC_PROXY_EXPORT.md) | SecPath Proxy Lists and GitHub Pages publishing |
 
 ## Runtime files
 

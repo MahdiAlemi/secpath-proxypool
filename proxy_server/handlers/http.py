@@ -150,7 +150,7 @@ def handle_http_client(client_sock: socket.socket, store: ProxyStore, cid: int):
                 client_sock,
                 407,
                 "Proxy Authentication Required",
-                [("Proxy-Authenticate", 'Basic realm="ProxyPool"')],
+                [("Proxy-Authenticate", 'Basic realm="SecPath ProxyPool"')],
             )
             return
 

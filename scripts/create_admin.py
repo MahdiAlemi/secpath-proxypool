@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create or update a database-backed ProxyPool administrator."""
+"""Create or update a database-backed SecPath ProxyPool administrator."""
 from __future__ import annotations
 
 import argparse

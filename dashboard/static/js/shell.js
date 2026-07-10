@@ -23,7 +23,7 @@
     if (title) title.textContent = meta.title;
     if (section) section.textContent = meta.section;
     document.body.dataset.activeTab = tab;
-    document.title = meta.title + ' · ProxyPool';
+    document.title = meta.title + ' · SecPath ProxyPool';
 
     var primary = document.getElementById('topbar-add-proxy');
     if (primary) {

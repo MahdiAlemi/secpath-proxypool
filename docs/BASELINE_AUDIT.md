@@ -1,4 +1,4 @@
-# ProxyPool baseline audit
+# SecPath ProxyPool baseline audit
 
 Audit scope: repository structure, Flask/API behavior, fresh-database startup, monitor lifecycle, proxy listener behavior, UI architecture, test coverage, and repository hygiene.
 

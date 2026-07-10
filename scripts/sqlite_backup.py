@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create, verify, or restore private ProxyPool SQLite backups."""
+"""Create, verify, or restore private SecPath ProxyPool SQLite backups."""
 from __future__ import annotations
 
 import argparse

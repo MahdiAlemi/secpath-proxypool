@@ -1,11 +1,11 @@
-# ProxyPool local runbook
+# SecPath ProxyPool local runbook
 
 This runbook covers local WSL operation only. It does not authorize or perform deployment.
 
 ## 1. Enter the project
 
 ```bash
-cd /home/mahdi/projects/proxyPool
+cd /path/to/secpath-proxypool
 source .venv/bin/activate
 ```
 
@@ -83,7 +83,7 @@ bash scripts/clean_runtime.sh --include-db
 ## 7. Apply a ZIP overlay
 
 ```bash
-cd /home/mahdi/projects/proxyPool
+cd /path/to/secpath-proxypool
 unzip -o /mnt/c/Users/Mahdi/Downloads/<overlay>.zip -d .
 ```
 
@@ -148,7 +148,7 @@ No local script in the rebuild workflow should deploy, restart production servic
 There is no built-in default dashboard password. Create a database-backed administrator against the active database:
 
 ```bash
-cd /home/mahdi/projects/proxyPool
+cd /path/to/secpath-proxypool
 source .venv/bin/activate
 python3 scripts/create_admin.py --username admin --role admin
 ```

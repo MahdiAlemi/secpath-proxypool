@@ -27,7 +27,7 @@ FILENAMES = {
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="Build the ProxyPool public validation site.")
+    result = argparse.ArgumentParser(description="Build the SecPath Proxy Lists static validation site.")
     result.add_argument("--sources", default="public_monitor/sources.ini")
     result.add_argument("--output", default="public_site")
     result.add_argument("--work-dir", default=".public-monitor-work")
@@ -59,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("curl is required for proxy validation")
 
     generated_at = datetime.now(timezone.utc)
-    repository = os.environ.get("GITHUB_REPOSITORY", "secpath/proxypool")
+    repository = os.environ.get("GITHUB_REPOSITORY", "MahdiAlemi/secpath-proxypool")
     repository_url = os.environ.get("PUBLIC_MONITOR_REPOSITORY_URL", f"https://github.com/{repository}")
     seed = args.seed or generated_at.strftime("%Y-%m-%dT%H")
 

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>Sign in · ProxyPool</title>
+  <title>Sign in · SecPath ProxyPool</title>
   <link rel="icon" href="{{ url_for('favicon') }}" sizes="any">
   <script>
     (function () {
@@ -21,8 +21,8 @@
 </head>
 <body>
   <main class="login-shell">
-    <section class="login-visual" aria-label="ProxyPool overview">
-      <div class="login-brand"><div class="login-mark"><span></span><span></span><span></span></div><strong>ProxyPool</strong></div>
+    <section class="login-visual" aria-label="SecPath ProxyPool overview">
+      <div class="login-brand"><div class="login-mark"><span></span><span></span><span></span></div><strong>SecPath ProxyPool</strong></div>
       <div class="login-message">
         <span>Control plane</span>
         <h1>Qualify every route before it carries traffic.</h1>
@@ -40,7 +40,7 @@
         <div class="login-heading">
           <span>Secure access</span>
           <h2>Welcome back</h2>
-          <p>Sign in to manage the local ProxyPool control plane.</p>
+          <p>Sign in to manage the local SecPath ProxyPool control plane.</p>
         </div>
 
         {% with messages = get_flashed_messages(category_filter=["error"]) %}

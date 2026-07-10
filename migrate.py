@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safely migrate ProxyPool proxy records from SQLite to another SQLAlchemy DB.
+"""Safely migrate SecPath ProxyPool proxy records from SQLite to another SQLAlchemy DB.
 
 The command is dry-run by default.  Pass ``--execute`` to write data.  Existing
 proxy identities are skipped; ``--replace --yes-replace`` deletes only target
