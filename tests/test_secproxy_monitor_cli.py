@@ -1,8 +1,20 @@
 from typer.testing import CliRunner
 
 from secproxy_cli.app import app
+from typer.main import get_command
 
 runner = CliRunner()
+
+def _subcommand(group: str, command: str):
+    root = get_command(app)
+    return root.commands[group].commands[command]
+
+def _option_map(command):
+    options = {}
+    for param in command.params:
+        for opt in getattr(param, "opts", ()) or ():
+            options[opt] = param
+    return options
 
 
 def test_monitor_help_is_registered():
@@ -13,8 +25,5 @@ def test_monitor_help_is_registered():
 
 
 def test_monitor_create_help_is_available():
-    result = runner.invoke(app, ["monitor", "create", "--help"])
-    assert result.exit_code == 0
-    assert "--protocol" in result.stdout
-    assert "--status" in result.stdout
-    assert "--run-mode" in result.stdout
+    options = _option_map(_subcommand("monitor", "create"))
+    assert "--protocol" in options

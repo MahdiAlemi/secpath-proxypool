@@ -3,22 +3,32 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from secproxy_cli.app import app
+from typer.main import get_command
 
 runner = CliRunner()
 
+def _subcommand(group: str, command: str):
+    root = get_command(app)
+    return root.commands[group].commands[command]
+
+def _option_map(command):
+    options = {}
+    for param in command.params:
+        for opt in getattr(param, "opts", ()) or ():
+            options[opt] = param
+    return options
+
 
 def test_proxy_help_has_secure_password_inputs():
-    result = runner.invoke(app, ["proxy", "add", "--help"])
-    assert result.exit_code == 0
-    assert "--password-prompt" in result.stdout
-    assert "--password-stdin" in result.stdout
+    options = _option_map(_subcommand("proxy", "add"))
+    assert "--password-prompt" in options
+    assert "--password-stdin" in options
 
 
 def test_proxy_test_help_has_separate_timeouts():
-    result = runner.invoke(app, ["proxy", "test", "--help"])
-    assert result.exit_code == 0
-    assert "--connect-timeout" in result.stdout
-    assert "--timeout" in result.stdout
+    options = _option_map(_subcommand("proxy", "test"))
+    assert "--connect-timeout" in options
+    assert "--timeout" in options
 
 
 def test_proxy_service_remains_core_implementation():
