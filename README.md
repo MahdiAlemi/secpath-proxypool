@@ -262,3 +262,25 @@ Copyright © 2026 Mahdi Alemi.
 ---
 
 **SecPath ProxyPool v1.0.0** · Developed by **Mahdi Alemi** · [github.com/MahdiAlemi/secpath-proxypool](https://github.com/MahdiAlemi/secpath-proxypool)
+
+<!-- secproxy-cli -->
+
+## SecProxy CLI
+
+The repository includes the `secproxy` operator CLI. It covers inventory, sources,
+validation monitors, local proxy listeners, insights, backups, cleanup, users, and
+configuration/diagnostics while sharing core monitor/server lifecycle services with
+the Flask UI.
+
+Install it from this checkout in editable mode:
+
+```bash
+python3 -m pip install -e . --no-deps
+secproxy --help
+```
+
+For an isolated global command while retaining this checkout as the state/application
+root, use `pipx install --editable .`.
+
+See [`docs/CLI.md`](docs/CLI.md) for the command tree, safety contracts, and release
+checks.
