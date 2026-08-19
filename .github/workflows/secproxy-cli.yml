@@ -2,6 +2,8 @@ name: SecProxy CLI
 
 on:
   push:
+    branches:
+      - master
     paths:
       - "secproxy_cli/**"
       - "secproxy_core/**"
@@ -15,6 +17,8 @@ on:
       - "scripts/verify_secproxy_wheel.py"
       - ".github/workflows/secproxy-cli.yml"
   pull_request:
+    branches:
+      - master
     paths:
       - "secproxy_cli/**"
       - "secproxy_core/**"
