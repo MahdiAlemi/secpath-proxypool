@@ -7,6 +7,7 @@ from secproxy_cli.commands.cleanup import app as cleanup_app
 from secproxy_cli.commands.config import app as config_app
 from secproxy_cli.commands.doctor import doctor_command
 from secproxy_cli.commands.insights import app as insights_app
+from secproxy_cli.commands.init import init_command
 from secproxy_cli.commands.monitor import app as monitor_app
 from secproxy_cli.commands.proxy import app as proxy_app
 from secproxy_cli.commands.server import app as server_app
@@ -32,6 +33,7 @@ app.add_typer(backup_app, name="backup")
 app.add_typer(cleanup_app, name="cleanup")
 app.add_typer(user_app, name="user")
 app.add_typer(config_app, name="config")
+app.command("init")(init_command)
 app.command("status")(status_command)
 app.command("doctor")(doctor_command)
 
