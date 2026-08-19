@@ -1,0 +1,59 @@
+name: SecProxy CLI
+
+on:
+  push:
+    paths:
+      - "secproxy_cli/**"
+      - "secproxy_core/**"
+      - "dashboard/routes/monitor.py"
+      - "dashboard/routes/server.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "requirements-dev.txt"
+      - "tests/test_secproxy*.py"
+      - "scripts/check_secproxy_cli.sh"
+      - "scripts/verify_secproxy_wheel.py"
+      - ".github/workflows/secproxy-cli.yml"
+  pull_request:
+    paths:
+      - "secproxy_cli/**"
+      - "secproxy_core/**"
+      - "dashboard/routes/monitor.py"
+      - "dashboard/routes/server.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "requirements-dev.txt"
+      - "tests/test_secproxy*.py"
+      - "scripts/check_secproxy_cli.sh"
+      - "scripts/verify_secproxy_wheel.py"
+      - ".github/workflows/secproxy-cli.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  cli:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install runtime and development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          if [ -f requirements-dev.txt ]; then
+            python -m pip install -r requirements-dev.txt
+          fi
+          python -m pip install "pytest>=8.0" ruff
+          python -m pip install -e . --no-deps
+
+      - name: Verify SecProxy CLI
+        run: bash scripts/check_secproxy_cli.sh

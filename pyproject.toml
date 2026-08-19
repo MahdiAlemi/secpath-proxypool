@@ -1,3 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "secpath-proxypool"
+version = "1.0.0"
+description = "Local-first proxy pool control plane"
+readme = "README.md"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[project.scripts]
+secproxy = "secproxy_cli.app:main"
+
+[tool.setuptools]
+py-modules = ["config", "database", "backup_utils", "secpath_meta", "migrate"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+  "secproxy_cli*",
+  "dashboard*",
+  "proxy_importer*",
+  "proxy_monitor*",
+  "proxy_server*",
+  "public_monitor*",
+
+  "secproxy_core*",
+]
+exclude = ["tests*"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100

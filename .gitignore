@@ -77,3 +77,8 @@ Thumbs.db
 # Generated public monitor output
 public_site/
 .public-monitor-work/
+
+# Local editable-install metadata
+*.egg-info/
+
+build/
